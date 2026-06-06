@@ -1,8 +1,13 @@
 # Changelog
 
-## 0.4.1 - Unreleased
+## 0.5.0 - Unreleased
 
-- Update `crawlkit` to v0.7.0.
+- Mark incomplete Desktop-cache Markdown pages with missing-block metadata and warnings instead of silently exporting title-only files.
+- Render page and database-row properties in Markdown exports with collection schema labels when available.
+- Preserve previously cached Desktop pages and blocks across opportunistic cache eviction while honoring explicit tombstones.
+- Track API and Desktop provenance independently so archived API records restore live Desktop page, block, and comment payloads.
+- Preserve source provenance in git-share snapshots and validate complete manifests before replacing a local archive.
+- Update `crawlkit` to v0.11.0.
 - API sync now tolerates Notion `restricted_resource` failures from `/users`, continues page/database discovery without user labels, and warns when API discovery returns no pages, databases, blocks, or comments. Thanks @elijahmuraoka.
 - API sync now skips fetching copied synced-block children that Notion reports as `object_not_found`, while still storing the synced-block copy. Thanks @elijahmuraoka.
 

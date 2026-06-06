@@ -34,6 +34,194 @@ func TestStoreUpsertsAndSearchesPage(t *testing.T) {
 	}
 }
 
+func TestStoreRestoresDesktopPayloadWhenAPISourceRetires(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := NowMS()
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Desktop title", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "text", Text: "Desktop body", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "API title", Alive: true, Source: "api", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "paragraph", Text: "API body", Alive: true, Source: "api", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Archived API title", Alive: false, Source: "api", SyncedAt: now + 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "paragraph", Text: "Archived API body", Alive: false, Source: "api", SyncedAt: now + 2}); err != nil {
+		t.Fatal(err)
+	}
+
+	pages, err := st.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].Title != "Desktop title" || pages[0].Source != "desktop" {
+		t.Fatalf("restored page = %#v", pages)
+	}
+	blocks, err := st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Text != "Desktop body" || blocks[0].Source != "desktop" {
+		t.Fatalf("restored blocks = %#v", blocks)
+	}
+}
+
+func TestStoreKeepsStructureWhenNewerFallbackPayloadIsOrphaned(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := NowMS()
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "page1", ParentID: "page1", Type: "text", Text: "Complete Desktop body",
+		ContentJSON: `["child1","child2"]`, LastEditedTime: 10, Alive: true, Source: "desktop", SyncedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "page1", ParentID: "page1", Type: "paragraph", Text: "API body",
+		LastEditedTime: 10, Alive: true, Source: "api", SyncedAt: now + 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", Type: "text",
+		LastEditedTime: 11, Alive: true, Source: "desktop", SyncedAt: now + 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "page1", ParentID: "page1", Type: "paragraph", Text: "Archived API body",
+		LastEditedTime: 12, Alive: false, Source: "api", SyncedAt: now + 3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Text != "Complete Desktop body" || blocks[0].ContentJSON != `["child1","child2"]` {
+		t.Fatalf("fallback payload was degraded: %#v", blocks)
+	}
+}
+
+func TestStoreRefreshesBothPageIndexesWhenFallbackBlockMoved(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := NowMS()
+	if err := st.UpsertPage(ctx, Page{ID: "desktop-page", Title: "Desktop page", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, Page{ID: "api-page", Title: "API page", Alive: true, Source: "api", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "desktop-page", ParentID: "desktop-page", Type: "text", Text: "desktop destination",
+		Alive: true, Source: "desktop", SyncedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "api-page", ParentID: "api-page", Type: "paragraph", Text: "api destination",
+		Alive: true, Source: "api", SyncedAt: now + 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "api-page", ParentID: "api-page", Type: "paragraph", Text: "archived api destination",
+		Alive: false, Source: "api", SyncedAt: now + 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	results, err := st.Search(ctx, "destination", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].ID != "desktop-page" {
+		t.Fatalf("moved fallback remained indexed under old page: %#v", results)
+	}
+}
+
+func TestStoreRefreshesBothPageIndexesWhenLiveBlockMoves(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := NowMS()
+	for _, page := range []Page{
+		{ID: "old-page", Title: "Old page", Alive: true, Source: "api", SyncedAt: now},
+		{ID: "new-page", Title: "New page", Alive: true, Source: "api", SyncedAt: now},
+	} {
+		if err := st.UpsertPage(ctx, page); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "old-page", ParentID: "old-page", Type: "paragraph", Text: "moving target",
+		Alive: true, Source: "api", SyncedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{
+		ID: "block1", PageID: "new-page", ParentID: "new-page", Type: "paragraph", Text: "moving target",
+		Alive: true, Source: "api", SyncedAt: now + 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	results, err := st.Search(ctx, "moving", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].ID != "new-page" {
+		t.Fatalf("live move remained indexed under old page: %#v", results)
+	}
+}
+
+func TestStoreRestoresCommentPayload(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := NowMS()
+	if err := st.UpsertComment(ctx, Comment{ID: "comment1", PageID: "page1", Text: "Desktop comment", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertComment(ctx, Comment{ID: "comment1", PageID: "page1", Text: "API comment", Alive: true, Source: "api", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertComment(ctx, Comment{ID: "comment1", PageID: "page1", Text: "Archived API comment", Alive: false, Source: "api", SyncedAt: now + 2}); err != nil {
+		t.Fatal(err)
+	}
+	comments, err := st.PageComments(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 1 || comments[0].Text != "Desktop comment" || comments[0].Source != "desktop" {
+		t.Fatalf("restored comments = %#v", comments)
+	}
+}
+
 func TestStoreSearchRanksByRelevanceThenRecency(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
 	if err != nil {

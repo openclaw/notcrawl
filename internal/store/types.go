@@ -67,6 +67,11 @@ type Block struct {
 	SyncedAt       int64
 }
 
+type BlockCoverage struct {
+	Referenced int
+	Missing    int
+}
+
 type Collection struct {
 	ID          string
 	SpaceID     string

@@ -126,7 +126,11 @@ See [`docs/distribution.md`](docs/distribution.md) for release operations.
 ## Safety Model
 
 Desktop mode is read-only. It snapshots Notion's local SQLite database before
-reading it and never writes to Notion application storage.
+reading it and never writes to Notion application storage. Desktop cache
+coverage is opportunistic; Markdown exports mark pages whose referenced blocks
+were not cached locally, and API sync can fill content shared with an integration.
+Rows missing from a later Desktop snapshot are preserved because cache eviction
+is not a deletion signal; explicit Notion tombstones still retire records.
 
 API mode uses the official Notion API. It stores raw API payloads alongside
 normalized rows so renderers can improve without recrawling.

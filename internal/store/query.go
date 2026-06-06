@@ -103,6 +103,31 @@ func (s *Store) PageBlocks(ctx context.Context, pageID string) ([]Block, error) 
 	return pageBlocksDisplayOrder(pageID, blocks), nil
 }
 
+func (s *Store) PageBlockCoverage(ctx context.Context, pageID string) (BlockCoverage, error) {
+	var coverage BlockCoverage
+	err := s.queryRowContext(ctx, `with recursive reachable(id) as (
+			select id from blocks
+			where page_id = ? and alive = 1 and (id = ? or parent_id = ?)
+			union
+			select child.id
+			from blocks child
+			join reachable parent on child.parent_id = parent.id
+			where child.page_id = ? and child.alive = 1
+		),
+		referenced as (
+			select distinct parent.id as parent_id, child.value as id
+			from reachable
+			join blocks parent on parent.id = reachable.id
+			join json_each(case when json_valid(parent.content_json) then parent.content_json else '[]' end) child
+			where child.type = 'text' and child.value <> ''
+		)
+		select count(*), coalesce(sum(case when available.id is null then 1 else 0 end), 0)
+		from referenced
+		left join blocks available on available.id = referenced.id and available.parent_id = referenced.parent_id and available.alive = 1`,
+		pageID, pageID, pageID, pageID).Scan(&coverage.Referenced, &coverage.Missing)
+	return coverage, err
+}
+
 func pageBlocksDisplayOrder(pageID string, blocks []Block) []Block {
 	children := map[string][]Block{}
 	for _, block := range blocks {

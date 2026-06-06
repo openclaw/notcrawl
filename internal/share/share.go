@@ -34,8 +34,9 @@ var exportTables = []string{
 }
 
 type Manifest struct {
-	GeneratedAt string          `json:"generated_at"`
-	Tables      []TableManifest `json:"tables"`
+	GeneratedAt   string          `json:"generated_at"`
+	Tables        []TableManifest `json:"tables"`
+	RecordSources *TableManifest  `json:"record_sources,omitempty"`
 }
 
 type TableManifest struct {
@@ -91,6 +92,12 @@ func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (Publish
 		manifest.Tables = append(manifest.Tables, tm)
 		dataKeep[filepath.Clean(filepath.Join(opts.RepoPath, tm.Path))] = true
 	}
+	recordSources, err := exportTable(ctx, st.DB(), opts.RepoPath, "record_sources")
+	if err != nil {
+		return PublishSummary{}, err
+	}
+	manifest.RecordSources = &recordSources
+	dataKeep[filepath.Clean(filepath.Join(opts.RepoPath, recordSources.Path))] = true
 	if err := pruneGeneratedFiles(dataRoot, dataKeep, func(path string) bool {
 		return strings.HasSuffix(path, ".jsonl.gz")
 	}); err != nil {
@@ -142,15 +149,135 @@ func Import(ctx context.Context, st *store.Store, repoPath string) (Manifest, er
 	if err := json.Unmarshal(b, &manifest); err != nil {
 		return Manifest{}, err
 	}
-	for _, table := range manifest.Tables {
-		if err := importTable(ctx, st.DB(), filepath.Join(repoPath, table.Path), table.Name); err != nil {
+	if err := validateManifest(repoPath, manifest); err != nil {
+		return manifest, err
+	}
+	tx, err := st.DB().BeginTx(ctx, nil)
+	if err != nil {
+		return manifest, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `delete from record_sources`); err != nil {
+		return manifest, err
+	}
+	for _, table := range exportTables {
+		if _, err := tx.ExecContext(ctx, "delete from "+quoteIdent(table)); err != nil {
 			return manifest, err
 		}
+	}
+	for _, table := range manifest.Tables {
+		rows, err := importTable(ctx, tx, filepath.Join(repoPath, table.Path), table.Name)
+		if err != nil {
+			return manifest, err
+		}
+		if rows != table.Rows {
+			return manifest, fmt.Errorf("snapshot table %s row count mismatch: manifest=%d imported=%d", table.Name, table.Rows, rows)
+		}
+	}
+	if manifest.RecordSources != nil {
+		rows, err := importTable(ctx, tx, filepath.Join(repoPath, manifest.RecordSources.Path), "record_sources")
+		if err != nil {
+			return manifest, err
+		}
+		if rows != manifest.RecordSources.Rows {
+			return manifest, fmt.Errorf("record_sources row count mismatch: manifest=%d imported=%d", manifest.RecordSources.Rows, rows)
+		}
+	} else {
+		if err := rebuildRecordSources(ctx, tx); err != nil {
+			return manifest, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return manifest, err
 	}
 	if err := st.RebuildFTS(ctx); err != nil {
 		return manifest, err
 	}
 	return manifest, nil
+}
+
+func validateManifest(repoPath string, manifest Manifest) error {
+	expected := make(map[string]bool, len(exportTables))
+	for _, table := range exportTables {
+		expected[table] = true
+	}
+	seen := make(map[string]bool, len(manifest.Tables))
+	for _, table := range manifest.Tables {
+		if table.Rows < 0 {
+			return fmt.Errorf("snapshot table %s has negative row count", table.Name)
+		}
+		if !expected[table.Name] {
+			return fmt.Errorf("unsupported snapshot table %q", table.Name)
+		}
+		if seen[table.Name] {
+			return fmt.Errorf("duplicate snapshot table %q", table.Name)
+		}
+		seen[table.Name] = true
+		if err := validateManifestFile(repoPath, table.Path); err != nil {
+			return fmt.Errorf("snapshot table %s: %w", table.Name, err)
+		}
+	}
+	for _, table := range exportTables {
+		if !seen[table] {
+			return fmt.Errorf("snapshot manifest missing required table %q", table)
+		}
+	}
+	if manifest.RecordSources != nil {
+		if manifest.RecordSources.Rows < 0 {
+			return fmt.Errorf("record_sources has negative row count")
+		}
+		if manifest.RecordSources.Name != "record_sources" {
+			return fmt.Errorf("invalid record_sources table name %q", manifest.RecordSources.Name)
+		}
+		if err := validateManifestFile(repoPath, manifest.RecordSources.Path); err != nil {
+			return fmt.Errorf("record_sources snapshot: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateManifestFile(repoPath, path string) error {
+	if path == "" {
+		return fmt.Errorf("missing path")
+	}
+	root, err := filepath.Abs(repoPath)
+	if err != nil {
+		return err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	full, err := filepath.Abs(filepath.Join(repoPath, path))
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(full)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink snapshot path is not allowed: %s", path)
+	}
+	resolved, err := filepath.EvalSymlinks(full)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, resolved)
+	if err != nil {
+		return err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes snapshot repository: %s", path)
+	}
+	info, err = os.Stat(resolved)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("not a regular file: %s", path)
+	}
+	return nil
 }
 
 func Subscribe(ctx context.Context, st *store.Store, remote, repoPath, branch string) (Manifest, error) {
@@ -221,27 +348,32 @@ func exportTable(ctx context.Context, db *sql.DB, repoPath, table string) (Table
 	return TableManifest{Name: table, Path: path, Rows: count}, nil
 }
 
-func importTable(ctx context.Context, db *sql.DB, path, table string) error {
+type sqlExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func importTable(ctx context.Context, db sqlExecer, path, table string) (int, error) {
 	in, err := os.Open(path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer in.Close()
 	gz, err := gzip.NewReader(in)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer gz.Close()
 	if _, err := db.ExecContext(ctx, "delete from "+quoteIdent(table)); err != nil {
-		return err
+		return 0, err
 	}
 	scanner := bufio.NewScanner(gz)
 	buf := make([]byte, 0, 1024*1024)
 	scanner.Buffer(buf, 32*1024*1024)
+	count := 0
 	for scanner.Scan() {
 		var row map[string]any
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
-			return err
+			return count, err
 		}
 		if len(row) == 0 {
 			continue
@@ -261,10 +393,27 @@ func importTable(ctx context.Context, db *sql.DB, path, table string) error {
 		}
 		stmt := fmt.Sprintf("insert or replace into %s(%s) values(%s)", quoteIdent(table), strings.Join(quotedCols, ","), strings.Join(holders, ","))
 		if _, err := db.ExecContext(ctx, stmt, args...); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, scanner.Err()
+}
+
+func rebuildRecordSources(ctx context.Context, db sqlExecer) error {
+	for _, stmt := range []string{
+		`insert into record_sources(record_table, record_id, source, synced_at, alive)
+			select 'page', id, source, synced_at, alive from pages`,
+		`insert into record_sources(record_table, record_id, source, synced_at, alive)
+			select 'block', id, source, synced_at, alive from blocks`,
+		`insert into record_sources(record_table, record_id, source, synced_at, alive)
+			select 'comment', id, source, synced_at, alive from comments`,
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
-	return scanner.Err()
+	return nil
 }
 
 func ensureRepo(ctx context.Context, repoPath, remote, branch string) error {

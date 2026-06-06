@@ -521,7 +521,11 @@ func runExportMarkdown(ctx context.Context, stdout io.Writer, cfg config.Config)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "exported %d pages to %s\n", s.Pages, cfg.MarkdownDir)
+	fmt.Fprintf(stdout, "exported %d pages to %s", s.Pages, cfg.MarkdownDir)
+	if s.IncompletePages > 0 {
+		fmt.Fprintf(stdout, " (%d incomplete; %d missing block references)", s.IncompletePages, s.MissingBlockReferences)
+	}
+	fmt.Fprintln(stdout)
 	return nil
 }
 

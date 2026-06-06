@@ -2,6 +2,7 @@ package share
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +41,14 @@ func TestPublishAndImportSnapshot(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(repo, "pages", "default", "launch-page1.md")); err != nil {
 		t.Fatal(err)
+	}
+	for _, table := range s.Manifest.Tables {
+		if table.Name == "record_sources" {
+			t.Fatal("record_sources must remain outside the legacy tables list")
+		}
+	}
+	if s.Manifest.RecordSources == nil || s.Manifest.RecordSources.Name != "record_sources" {
+		t.Fatal("expected source provenance sidecar")
 	}
 	stalePage := filepath.Join(repo, "pages", "default", "stale.md")
 	if err := os.WriteFile(stalePage, []byte("stale"), 0o644); err != nil {
@@ -84,6 +93,275 @@ func TestPublishAndImportSnapshot(t *testing.T) {
 	}
 	if len(results) != 1 {
 		t.Fatalf("expected imported search result, got %d", len(results))
+	}
+	hasSource, err := dst.RecordHasLiveSource(ctx, "page", "page1", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSource {
+		t.Fatal("expected imported page source provenance")
+	}
+}
+
+func TestPublishAndImportPreservesMixedSourceProvenance(t *testing.T) {
+	ctx := context.Background()
+	src, err := store.Open(filepath.Join(t.TempDir(), "src.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	now := store.NowMS()
+	if err := src.UpsertPage(ctx, store.Page{ID: "page1", Title: "Desktop", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.UpsertPage(ctx, store.Page{ID: "page1", Title: "API", Alive: true, Source: "api", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.UpsertPage(ctx, store.Page{ID: "page1", Title: "Archived", Alive: false, Source: "api", SyncedAt: now + 2}); err != nil {
+		t.Fatal(err)
+	}
+
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo}); err != nil {
+		t.Fatal(err)
+	}
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if _, err := Import(ctx, dst, repo); err != nil {
+		t.Fatal(err)
+	}
+	desktopLive, err := dst.RecordHasLiveSource(ctx, "page", "page1", "desktop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiLive, err := dst.RecordHasLiveSource(ctx, "page", "page1", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !desktopLive || apiLive {
+		t.Fatalf("source provenance after import: desktop=%v api=%v", desktopLive, apiLive)
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].Title != "Desktop" || pages[0].Source != "desktop" {
+		t.Fatalf("canonical payload after import = %#v", pages)
+	}
+}
+
+func TestImportLegacySnapshotRebuildsSourceProvenance(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
+	defer src.Close()
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(repo, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.RecordSources = nil
+	data, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(repo, "data", "record_sources.jsonl.gz")); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "stale", Title: "Stale destination row", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Import(ctx, dst, repo); err != nil {
+		t.Fatal(err)
+	}
+	hasSource, err := dst.RecordHasLiveSource(ctx, "page", "page1", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasSource {
+		t.Fatal("expected legacy provenance rebuild")
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].ID != "page1" {
+		t.Fatalf("legacy import retained stale destination rows: %#v", pages)
+	}
+}
+
+func TestImportRejectsIncompleteManifestBeforeClearingDestination(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
+	defer src.Close()
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(repo, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	var tables []TableManifest
+	for _, table := range manifest.Tables {
+		if table.Name != "pages" {
+			tables = append(tables, table)
+		}
+	}
+	manifest.Tables = tables
+	data, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Import(ctx, dst, repo); err == nil {
+		t.Fatal("expected incomplete manifest rejection")
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].ID != "keep" {
+		t.Fatalf("incomplete import altered destination: %#v", pages)
+	}
+}
+
+func TestImportRejectsRowCountMismatchBeforeCommit(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
+	defer src.Close()
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(repo, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	for i := range manifest.Tables {
+		if manifest.Tables[i].Name == "pages" {
+			manifest.Tables[i].Rows++
+		}
+	}
+	data, err = json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Import(ctx, dst, repo); err == nil {
+		t.Fatal("expected row count mismatch rejection")
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].ID != "keep" {
+		t.Fatalf("row count mismatch altered destination: %#v", pages)
+	}
+}
+
+func TestImportRejectsSymlinkedSnapshotFile(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
+	defer src.Close()
+	repo := t.TempDir()
+	summary, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pagesPath string
+	for _, table := range summary.Manifest.Tables {
+		if table.Name == "pages" {
+			pagesPath = filepath.Join(repo, table.Path)
+			break
+		}
+	}
+	if pagesPath == "" {
+		t.Fatal("pages table missing from manifest")
+	}
+	data, err := os.ReadFile(pagesPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "pages.jsonl.gz")
+	if err := os.WriteFile(outside, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(pagesPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, pagesPath); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Import(ctx, dst, repo); err == nil {
+		t.Fatal("expected symlinked snapshot rejection")
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].ID != "keep" {
+		t.Fatalf("symlinked import altered destination: %#v", pages)
 	}
 }
 

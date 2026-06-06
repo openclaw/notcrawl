@@ -310,6 +310,139 @@ func TestSyncWarnsWhenAPIDiscoveryReturnsNothing(t *testing.T) {
 	}
 }
 
+func TestIngestPageMarksBlockSyncOnlyAfterSuccessfulWalk(t *testing.T) {
+	failBlocks := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/blocks/page1/children" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if failBlocks {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"object":"error","status":500,"code":"internal_server_error","message":"failed"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	page := obj{
+		"id":       "page1",
+		"archived": false,
+		"in_trash": false,
+		"parent":   map[string]any{"type": "workspace", "workspace": true},
+		"properties": map[string]any{
+			"Name": map[string]any{
+				"id": "title", "type": "title",
+				"title": []any{map[string]any{"plain_text": "Page"}},
+			},
+		},
+	}
+	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
+	if _, _, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true}); err != nil {
+		t.Fatal(err)
+	}
+	synced, err := st.HasSyncState(ctx, SourceName, "page_blocks", "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !synced {
+		t.Fatal("successful block walk did not mark page complete")
+	}
+
+	failBlocks = true
+	if _, _, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true}); err == nil {
+		t.Fatal("expected failed block walk")
+	}
+	synced, err = st.HasSyncState(ctx, SourceName, "page_blocks", "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if synced {
+		t.Fatal("failed block walk retained completion marker")
+	}
+}
+
+func TestIngestArchivedPageRestoresDesktopBlocksWithoutRefetching(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := store.NowMS()
+	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Desktop page", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, store.Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "text", Text: "Desktop body", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "API page", Alive: true, Source: SourceName, SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, store.Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "paragraph", Text: "API body", Alive: true, Source: SourceName, SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertComment(ctx, store.Comment{ID: "comment1", PageID: "page1", Text: "Desktop comment", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertComment(ctx, store.Comment{ID: "comment1", PageID: "page1", Text: "API comment", Alive: true, Source: SourceName, SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	page := obj{
+		"id":       "page1",
+		"archived": true,
+		"parent":   map[string]any{"type": "workspace", "workspace": true},
+		"properties": map[string]any{
+			"Name": map[string]any{
+				"id":    "title",
+				"type":  "title",
+				"title": []any{map[string]any{"plain_text": "Archived API page"}},
+			},
+		},
+	}
+	if _, _, err := (Client{BaseURL: server.URL, Token: "secret"}).ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true, FetchComments: true}); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 0 {
+		t.Fatalf("archived page made %d requests", requests)
+	}
+	pages, err := st.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].Title != "Desktop page" || pages[0].Source != "desktop" {
+		t.Fatalf("restored page = %#v", pages)
+	}
+	blocks, err := st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Text != "Desktop body" || blocks[0].Source != "desktop" {
+		t.Fatalf("restored blocks = %#v", blocks)
+	}
+	comments, err := st.PageComments(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 1 || comments[0].Text != "Desktop comment" || comments[0].Source != "desktop" {
+		t.Fatalf("Desktop comment was not restored: %#v", comments)
+	}
+}
+
 func TestWalkBlocksSkipsSyncedBlockCopyChildren(t *testing.T) {
 	requestedCopyChildren := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,6 +494,64 @@ func TestWalkBlocksSkipsSyncedBlockCopyChildren(t *testing.T) {
 	}
 	if len(blocks) != 1 || blocks[0].ID != "copy1" || blocks[0].Type != "synced_block" {
 		t.Fatalf("unexpected blocks: %+v", blocks)
+	}
+}
+
+func TestWalkBlocksRetiresMissingAPIBlocksAfterSuccessfulWalk(t *testing.T) {
+	includeBlock := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/blocks/page1/children" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if !includeBlock {
+			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"object":"list",
+			"results":[{
+				"object":"block",
+				"id":"block1",
+				"type":"paragraph",
+				"has_children":false,
+				"created_time":"2026-01-01T00:00:00Z",
+				"last_edited_time":"2026-01-01T00:00:00Z",
+				"paragraph":{"rich_text":[{"type":"text","plain_text":"remove me","text":{"content":"remove me"}}]}
+			}],
+			"has_more":false
+		}`))
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
+	if _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("expected initial API block, got %#v", blocks)
+	}
+
+	includeBlock = false
+	if _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err = st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 0 {
+		t.Fatalf("missing API block remained live: %#v", blocks)
 	}
 }
 

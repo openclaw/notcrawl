@@ -240,13 +240,30 @@ func (c Client) ingestPage(ctx context.Context, st *store.Store, page obj, opts 
 	if p.Title == "" {
 		p.Title = "Untitled"
 	}
+	if opts.FetchBlocks {
+		if err := st.ClearSyncState(ctx, SourceName, "page_blocks", p.ID); err != nil {
+			return 0, 0, err
+		}
+	}
 	if err := st.UpsertPage(ctx, p); err != nil {
 		return 0, 0, err
+	}
+	if !p.Alive {
+		if _, err := st.RetireSourcePageBlocks(ctx, SourceName, p.ID); err != nil {
+			return 0, 0, err
+		}
+		if _, err := st.RetireSourcePageComments(ctx, SourceName, p.ID); err != nil {
+			return 0, 0, err
+		}
+		return 0, 0, nil
 	}
 	var blocks, comments int
 	if opts.FetchBlocks {
 		blocks, err = c.walkBlocks(ctx, st, p.ID, p.ID, p.SpaceID)
 		if err != nil {
+			return 0, 0, err
+		}
+		if err := st.SetSyncState(ctx, SourceName, "page_blocks", p.ID, "complete"); err != nil {
 			return 0, 0, err
 		}
 	}
@@ -354,6 +371,21 @@ func (c Client) usesDataSourceAPI() bool {
 }
 
 func (c Client) walkBlocks(ctx context.Context, st *store.Store, pageID, parentID, spaceID string) (int, error) {
+	syncedAt, err := st.NextSourceSyncAt(ctx, "block", SourceName)
+	if err != nil {
+		return 0, err
+	}
+	count, err := c.walkBlocksAt(ctx, st, pageID, parentID, spaceID, syncedAt)
+	if err != nil {
+		return count, err
+	}
+	if _, err := st.RetireSourcePageBlocksNotSyncedAt(ctx, SourceName, pageID, syncedAt); err != nil {
+		return count, err
+	}
+	return count, nil
+}
+
+func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, parentID, spaceID string, syncedAt int64) (int, error) {
 	var count int
 	cursor := ""
 	var displayOrder int64
@@ -392,13 +424,13 @@ func (c Client) walkBlocks(ctx context.Context, st *store.Store, pageID, parentI
 				Alive:          !block.bool("archived") && !block.bool("in_trash"),
 				Source:         SourceName,
 				RawJSON:        raw,
-				SyncedAt:       store.NowMS(),
+				SyncedAt:       syncedAt,
 			}); err != nil {
 				return count, err
 			}
 			count++
 			if shouldFetchBlockChildren(block) {
-				n, err := c.walkBlocks(ctx, st, pageID, block.string("id"), spaceID)
+				n, err := c.walkBlocksAt(ctx, st, pageID, block.string("id"), spaceID, syncedAt)
 				if err != nil {
 					return count, err
 				}

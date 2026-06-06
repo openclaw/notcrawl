@@ -65,6 +65,7 @@ func Ingest(ctx context.Context, st *store.Store, path, cacheDir string) (Summar
 	}
 	defer db.Close()
 	s := Summary{Source: source}
+	syncedAt := store.NowMS()
 	if err := st.WithTransaction(ctx, func() error {
 		return st.DeferPageFTS(ctx, func() error {
 			if s.Spaces, err = ingestSpaces(ctx, st, db); err != nil {
@@ -79,10 +80,10 @@ func Ingest(ctx context.Context, st *store.Store, path, cacheDir string) (Summar
 			if s.Collections, err = ingestCollections(ctx, st, db); err != nil {
 				return err
 			}
-			if s.Pages, s.Blocks, s.RawRecords, err = ingestBlocks(ctx, st, db); err != nil {
+			if s.Pages, s.Blocks, s.RawRecords, err = ingestBlocks(ctx, st, db, syncedAt); err != nil {
 				return err
 			}
-			if s.Comments, err = ingestComments(ctx, st, db); err != nil {
+			if s.Comments, err = ingestComments(ctx, st, db, syncedAt); err != nil {
 				return err
 			}
 			addedSpaces, err := st.EnsureSpaceFallbacks(ctx, SourceName)
@@ -324,7 +325,7 @@ type localBlock struct {
 	Text           string
 }
 
-func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB) (pages int, blocks int, rawRecords int, err error) {
+func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int64) (pages int, blocks int, rawRecords int, err error) {
 	rows, err := db.QueryContext(ctx, `select id, space_id, type, coalesce(properties, ''), coalesce(content, ''),
 		coalesce(collection_id, ''), coalesce(cast(created_time as integer), 0), coalesce(cast(last_edited_time as integer), 0),
 		coalesce(parent_id, ''), coalesce(parent_table, ''), alive, coalesce(format, ''),
@@ -389,7 +390,7 @@ func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB) (pages int, 
 				Alive:          b.Alive,
 				Source:         SourceName,
 				RawJSON:        b.RawJSON,
-				SyncedAt:       store.NowMS(),
+				SyncedAt:       syncedAt,
 			}); err != nil {
 				return pages, blocks, rawRecords, err
 			}
@@ -412,14 +413,14 @@ func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB) (pages int, 
 			Alive:          b.Alive,
 			Source:         SourceName,
 			RawJSON:        b.RawJSON,
-			SyncedAt:       store.NowMS(),
+			SyncedAt:       syncedAt,
 		}); err != nil {
 			return pages, blocks, rawRecords, err
 		}
 		blocks++
 		if err := st.UpsertRawRecord(ctx, store.RawRecord{
 			Source: SourceName, RecordTable: "block", RecordID: b.ID, ParentID: b.ParentID,
-			SpaceID: b.SpaceID, RawJSON: b.RawJSON, SyncedAt: store.NowMS(),
+			SpaceID: b.SpaceID, RawJSON: b.RawJSON, SyncedAt: syncedAt,
 		}); err != nil {
 			return pages, blocks, rawRecords, err
 		}
@@ -495,14 +496,17 @@ func blockText(raw string) string {
 	return notiontext.PlainFromJSON(raw)
 }
 
-func ingestComments(ctx context.Context, st *store.Store, db *sql.DB) (int, error) {
+func ingestComments(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int64) (int, error) {
 	rows, err := db.QueryContext(ctx, `select id, parent_id, space_id, coalesce(text, ''), coalesce(created_by_id, ''),
 		coalesce(cast(created_time as integer), 0), coalesce(cast(last_edited_time as integer), 0), alive,
 		coalesce(json_object('id', id, 'parent_id', parent_id, 'space_id', space_id, 'text', text, 'content', content,
 			'created_by_id', created_by_id, 'created_time', created_time, 'last_edited_time', last_edited_time, 'alive', alive), '{}')
 		from comment`)
 	if err != nil {
-		return 0, ignoreMissingTable(err)
+		if ignoreMissingTable(err) == nil {
+			return 0, nil
+		}
+		return 0, err
 	}
 	defer rows.Close()
 	n := 0
@@ -516,12 +520,14 @@ func ingestComments(ctx context.Context, st *store.Store, db *sql.DB) (int, erro
 		c.Text = notiontext.PlainFromJSON(c.Text)
 		c.Alive = alive != 0
 		c.Source = SourceName
-		c.SyncedAt = store.NowMS()
+		c.SyncedAt = syncedAt
 		if err := st.UpsertComment(ctx, c); err != nil {
 			return n, err
 		}
 		n++
 	}
+	// Desktop's comment table is opportunistic and has no completeness marker.
+	// Only explicit alive=0 rows retire comments; absence is not a tombstone.
 	return n, rows.Err()
 }
 

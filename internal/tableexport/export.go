@@ -36,7 +36,7 @@ type exportColumn struct {
 	Header string
 }
 
-type referenceLabels struct {
+type ReferenceLabels struct {
 	Users map[string]string
 	Pages map[string]string
 }
@@ -100,16 +100,16 @@ func (e Exporter) Export(ctx context.Context, databaseID string, format Format, 
 	return Summary{Database: collection.ID, Rows: len(pages), Columns: len(columns)}, nil
 }
 
-func (e Exporter) referenceLabels(ctx context.Context) (referenceLabels, error) {
+func (e Exporter) referenceLabels(ctx context.Context) (ReferenceLabels, error) {
 	users, err := e.Store.UserNames(ctx)
 	if err != nil {
-		return referenceLabels{}, err
+		return ReferenceLabels{}, err
 	}
 	pages, err := e.Store.PageTitles(ctx)
 	if err != nil {
-		return referenceLabels{}, err
+		return ReferenceLabels{}, err
 	}
-	return referenceLabels{Users: users, Pages: pages}, nil
+	return ReferenceLabels{Users: users, Pages: pages}, nil
 }
 
 func columnsFor(collection store.Collection, pages []store.Page) []exportColumn {
@@ -198,7 +198,7 @@ func decodeMap(raw string) map[string]any {
 	return out
 }
 
-func propertyValueText(v any, refs referenceLabels) string {
+func propertyValueText(v any, refs ReferenceLabels) string {
 	if text, ok := desktopValueText(v, refs); ok {
 		return text
 	}
@@ -245,7 +245,11 @@ func propertyValueText(v any, refs referenceLabels) string {
 	return notiontext.Plain(v)
 }
 
-func desktopValueText(v any, refs referenceLabels) (string, bool) {
+func PropertyText(v any, refs ReferenceLabels) string {
+	return propertyValueText(v, refs)
+}
+
+func desktopValueText(v any, refs ReferenceLabels) (string, bool) {
 	text, ok := desktopPlain(v, refs)
 	if !ok {
 		return "", false
@@ -254,7 +258,7 @@ func desktopValueText(v any, refs referenceLabels) (string, bool) {
 	return text, true
 }
 
-func desktopPlain(v any, refs referenceLabels) (string, bool) {
+func desktopPlain(v any, refs ReferenceLabels) (string, bool) {
 	switch x := v.(type) {
 	case nil:
 		return "", true
@@ -296,7 +300,7 @@ func desktopPlain(v any, refs referenceLabels) (string, bool) {
 	}
 }
 
-func desktopRefListText(v any, refs referenceLabels) string {
+func desktopRefListText(v any, refs ReferenceLabels) string {
 	items, ok := v.([]any)
 	if !ok {
 		return notiontext.Plain(v)
@@ -310,7 +314,7 @@ func desktopRefListText(v any, refs referenceLabels) string {
 	return strings.Join(parts, " ")
 }
 
-func desktopRefText(v any, refs referenceLabels) string {
+func desktopRefText(v any, refs ReferenceLabels) string {
 	item, ok := v.([]any)
 	if !ok || len(item) == 0 {
 		return notiontext.Plain(v)
@@ -381,7 +385,7 @@ func joinNamed(v any) string {
 	return strings.Join(parts, ", ")
 }
 
-func joinIDs(v any, refs referenceLabels) string {
+func joinIDs(v any, refs ReferenceLabels) string {
 	items, ok := v.([]any)
 	if !ok {
 		return ""
@@ -418,7 +422,7 @@ func dateText(v any) string {
 	return start
 }
 
-func formulaText(v any, refs referenceLabels) string {
+func formulaText(v any, refs ReferenceLabels) string {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return ""
@@ -443,7 +447,7 @@ func formulaText(v any, refs referenceLabels) string {
 	return notiontext.Plain(v)
 }
 
-func rollupText(v any, refs referenceLabels) string {
+func rollupText(v any, refs ReferenceLabels) string {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return ""
