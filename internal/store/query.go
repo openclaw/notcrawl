@@ -311,24 +311,6 @@ func (s *Store) SpaceName(ctx context.Context, id string) (string, error) {
 	return fallbackSpaceName(id), nil
 }
 
-func (s *Store) TeamName(ctx context.Context, id string) (string, error) {
-	if id == "" {
-		return "", nil
-	}
-	var name sql.NullString
-	err := s.queryRowContext(ctx, `select name from teams where id = ?`, id).Scan(&name)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "team-" + shortID(id), nil
-		}
-		return "", err
-	}
-	if name.Valid && name.String != "" {
-		return name.String, nil
-	}
-	return "team-" + shortID(id), nil
-}
-
 func (s *Store) PageTeamID(ctx context.Context, page Page) (string, error) {
 	seen := map[string]bool{page.ID: true}
 	return s.resolveTeamID(ctx, page.ParentTable, page.ParentID, page.CollectionID, seen)

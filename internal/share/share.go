@@ -433,10 +433,6 @@ func ensureRepo(ctx context.Context, repoPath, remote, branch string) error {
 	return nil
 }
 
-func hasChanges(ctx context.Context, repoPath string) (bool, error) {
-	return mirror.Dirty(ctx, mirror.Options{RepoPath: repoPath})
-}
-
 func pullForUpdate(ctx context.Context, repoPath, remote, branch string) error {
 	if strings.TrimSpace(remote) != "" {
 		return mirror.Pull(ctx, mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch})

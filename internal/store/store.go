@@ -344,25 +344,6 @@ func (s *Store) ensureColumn(ctx context.Context, table, column, definition stri
 	return err
 }
 
-func (s *Store) RebuildRecordSources(ctx context.Context) error {
-	if _, err := s.execContext(ctx, `delete from record_sources`); err != nil {
-		return err
-	}
-	for _, stmt := range []string{
-		`insert into record_sources(record_table, record_id, source, synced_at, alive)
-			select 'page', id, source, synced_at, alive from pages`,
-		`insert into record_sources(record_table, record_id, source, synced_at, alive)
-			select 'block', id, source, synced_at, alive from blocks`,
-		`insert into record_sources(record_table, record_id, source, synced_at, alive)
-			select 'comment', id, source, synced_at, alive from comments`,
-	} {
-		if _, err := s.execContext(ctx, stmt); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func NowMS() int64 {
 	return time.Now().UnixMilli()
 }
