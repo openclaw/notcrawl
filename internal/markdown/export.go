@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/openclaw/notcrawl/internal/notiontext"
@@ -563,7 +562,10 @@ func pruneStaleMarkdown(root string, keep map[string]bool) error {
 }
 
 func isIgnorableRemoveDirError(err error) bool {
-	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST)
+	// os.ErrExist matches EEXIST/ENOTEMPTY on Unix and ERROR_DIR_NOT_EMPTY on
+	// Windows; syscall.ENOTEMPTY is an invented constant on Windows and never
+	// matches the real error.
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, os.ErrExist)
 }
 
 func formatMS(ms int64) string {

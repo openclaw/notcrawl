@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/openclaw/crawlkit/mirror"
@@ -571,7 +570,7 @@ func pruneGeneratedFiles(root string, keep map[string]bool, shouldPrune func(str
 		return len(dirs[i]) > len(dirs[j])
 	})
 	for _, dir := range dirs {
-		if err := os.Remove(dir); err != nil && !os.IsNotExist(err) && !errors.Is(err, syscall.ENOTEMPTY) && !errors.Is(err, syscall.EEXIST) {
+		if err := os.Remove(dir); err != nil && !os.IsNotExist(err) && !errors.Is(err, os.ErrExist) {
 			return err
 		}
 	}
