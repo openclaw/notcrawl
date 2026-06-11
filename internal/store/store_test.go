@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -678,7 +679,9 @@ func TestStoreOpenAppliesSQLitePragmasAndPrivateFileMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// Unix permission bits are fabricated on Windows (writable files always
+	// stat as 0666); privacy there comes from inherited NTFS ACLs instead.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("database should not be group/world-readable: %s", info.Mode().Perm())
 	}
 

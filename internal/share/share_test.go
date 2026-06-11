@@ -481,6 +481,7 @@ func snapshotStoreForTest(t *testing.T, ctx context.Context, title, text string)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: title, Alive: true, Source: "test", SyncedAt: now}); err != nil {
 		t.Fatal(err)
