@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 
 const (
 	defaultDirName        = ".notcrawl"
-	defaultDesktopPath    = "~/Library/Application Support/Notion/notion.db"
 	defaultAPIVersion     = "2026-03-11"
 	defaultMCPBaseURL     = "https://chatgpt.com/backend-api/wham/apps"
 	defaultMCPAuthPath    = "~/.codex/auth.json"
@@ -159,9 +159,30 @@ func WriteStarter(path string) (string, error) {
 	return path, crawlconfig.WriteTOML(path, cfg, 0o600)
 }
 
+// defaultDesktopPath returns the Notion Desktop cache location for the
+// current platform: Electron userData is ~/Library/Application Support on
+// macOS, %APPDATA% on Windows, and $XDG_CONFIG_HOME (default ~/.config) on
+// Linux.
+func defaultDesktopPath() string {
+	switch runtime.GOOS {
+	case "windows":
+		if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" && filepath.IsAbs(appData) {
+			return filepath.Join(appData, "Notion", "notion.db")
+		}
+		return "~/AppData/Roaming/Notion/notion.db"
+	case "darwin":
+		return "~/Library/Application Support/Notion/notion.db"
+	default:
+		if xdg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdg != "" && filepath.IsAbs(xdg) {
+			return filepath.Join(xdg, "Notion", "notion.db")
+		}
+		return "~/.config/Notion/notion.db"
+	}
+}
+
 func (c *Config) Resolve() error {
 	if strings.TrimSpace(c.Notion.Desktop.Path) == "" {
-		c.Notion.Desktop.Path = defaultDesktopPath
+		c.Notion.Desktop.Path = defaultDesktopPath()
 	}
 	if strings.TrimSpace(c.Notion.API.TokenEnv) == "" {
 		c.Notion.API.TokenEnv = "NOTION_TOKEN"
