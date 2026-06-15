@@ -117,6 +117,25 @@ jobs:
           ./bin/notcrawl --config "$cfg" --db "$db" status --json | grep -q '"databases"'
           ./bin/notcrawl --config "$cfg" --db "$db" tui --json --limit 1 | grep -q '^\['
 
+  windows-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Build CLI
+        run: go build -ldflags "-X main.version=ci" -o notcrawl.exe ./cmd/notcrawl
+
   release-check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
