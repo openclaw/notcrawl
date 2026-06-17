@@ -668,3 +668,40 @@ func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
 		t.Fatalf("unexpected comments: %+v", comments)
 	}
 }
+
+func TestIngestCommentsRetriesCloudflareTimeout(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if r.URL.Path != "/comments" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(524)
+			_, _ = w.Write([]byte(`<!DOCTYPE html><title>Notion</title>`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"object":"list",
+			"results":[],
+			"has_more":false
+		}`))
+	}))
+	defer server.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).ingestComments(context.Background(), st, "page1", "space1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 || attempts != 2 {
+		t.Fatalf("unexpected count/attempts: count=%d attempts=%d", count, attempts)
+	}
+}

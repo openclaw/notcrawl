@@ -614,7 +614,8 @@ func shouldRetry(err notionAPIError) bool {
 	}
 	return err.StatusCode == http.StatusBadGateway ||
 		err.StatusCode == http.StatusServiceUnavailable ||
-		err.StatusCode == http.StatusGatewayTimeout
+		err.StatusCode == http.StatusGatewayTimeout ||
+		err.StatusCode == 524 // Cloudflare timeout, returned by Notion for transient upstream stalls.
 }
 
 func retryAfter(header string, body []byte) time.Duration {
