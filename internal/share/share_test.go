@@ -385,6 +385,31 @@ func TestEnsureRepoUpdatesExistingOrigin(t *testing.T) {
 	}
 }
 
+func TestPublishWithoutPushDoesNotFetchRemote(t *testing.T) {
+	ctx := context.Background()
+	repo := filepath.Join(t.TempDir(), "repo")
+	runGitForTest(t, t.TempDir(), "init", "-b", "main", repo)
+	st, mdDir := snapshotStoreForTest(t, ctx, "Local", "offline snapshot")
+	_, err := Publish(ctx, st, PublishOptions{
+		RepoPath:    repo,
+		Remote:      "https://example.invalid/archive.git",
+		Branch:      "main",
+		MarkdownDir: mdDir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Publish(ctx, st, PublishOptions{
+		RepoPath:    repo,
+		Remote:      "https://example.invalid/archive.git",
+		Branch:      "main",
+		MarkdownDir: mdDir,
+		Commit:      true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPublishTagRequiresCommitBeforeWriting(t *testing.T) {
 	repo := filepath.Join(t.TempDir(), "repo")
 	if _, err := Publish(context.Background(), nil, PublishOptions{RepoPath: repo, Tag: "snapshot/test"}); err == nil {
@@ -392,6 +417,25 @@ func TestPublishTagRequiresCommitBeforeWriting(t *testing.T) {
 	}
 	if _, err := os.Stat(repo); !os.IsNotExist(err) {
 		t.Fatalf("failed tagged publish should not create repo: %v", err)
+	}
+}
+
+func TestPublishValidatesTagBeforeRemoteSync(t *testing.T) {
+	ctx := context.Background()
+	repo := filepath.Join(t.TempDir(), "repo")
+	runGitForTest(t, t.TempDir(), "init", "-b", "main", repo)
+	st, mdDir := snapshotStoreForTest(t, ctx, "Local", "offline snapshot")
+	_, err := Publish(ctx, st, PublishOptions{
+		RepoPath:    repo,
+		Remote:      "https://example.invalid/archive.git",
+		Branch:      "main",
+		MarkdownDir: mdDir,
+		Commit:      true,
+		Push:        true,
+		Tag:         "bad tag",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid snapshot tag") {
+		t.Fatalf("Publish error = %v", err)
 	}
 }
 

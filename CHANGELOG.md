@@ -2,6 +2,7 @@
 
 ## 0.5.1 - Unreleased
 
+- Retry concurrent Git snapshot branch-and-tag pushes after rebasing and retargeting the unpublished tag.
 - Retry transient Cloudflare 524 timeouts from Notion API requests. Thanks @davelutztx.
 - Update `golang.org/x/sys` to v0.46.0, resolving a Windows integer-overflow advisory in the dependency graph.
 - Add immutable Git share snapshot tags and non-mutating historical imports with `update --ref`.

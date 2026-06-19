@@ -80,6 +80,11 @@ func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (Publish
 	if err := mirror.ValidateTag(ctx, mirror.Options{RepoPath: opts.RepoPath, Remote: opts.Remote, Branch: opts.Branch}, opts.Tag); err != nil {
 		return PublishSummary{}, err
 	}
+	if opts.Push {
+		if err := mirror.SyncForWrite(ctx, mirror.Options{RepoPath: opts.RepoPath, Remote: opts.Remote, Branch: opts.Branch, DirMode: 0o750}); err != nil {
+			return PublishSummary{}, err
+		}
+	}
 	dataRoot := filepath.Join(opts.RepoPath, "data")
 	pagesRoot := filepath.Join(opts.RepoPath, "pages")
 	if err := os.MkdirAll(dataRoot, 0o755); err != nil {
@@ -159,7 +164,7 @@ func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (Publish
 		if strings.TrimSpace(opts.Tag) == "" {
 			err = mirror.Push(ctx, mirrorOpts)
 		} else {
-			err = mirror.PushAtomic(ctx, mirrorOpts, "HEAD:refs/heads/"+opts.Branch, "refs/tags/"+opts.Tag)
+			err = mirror.PushSnapshot(ctx, mirrorOpts, opts.Tag)
 		}
 		if err != nil {
 			return s, err
@@ -538,7 +543,7 @@ func rebuildRecordSources(ctx context.Context, db sqlExecer) error {
 }
 
 func ensureRepo(ctx context.Context, repoPath, remote, branch string) error {
-	opts := mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch}
+	opts := mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch, DirMode: 0o750}
 	if strings.TrimSpace(remote) != "" {
 		return mirror.EnsureRemote(ctx, opts)
 	}
