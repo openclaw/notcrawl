@@ -4,6 +4,8 @@
 
 - Retry transient Cloudflare 524 timeouts from Notion API requests. Thanks @davelutztx.
 - Update `golang.org/x/sys` to v0.46.0, resolving a Windows integer-overflow advisory in the dependency graph.
+- Add immutable Git share snapshot tags and non-mutating historical imports with `update --ref`.
+- Move Desktop SQLite bundle snapshots, Markdown sidecar synchronization, and Git share commits/remotes onto CrawlKit; refresh Go dependencies.
 
 ## 0.5.0 - 2026-06-17
 

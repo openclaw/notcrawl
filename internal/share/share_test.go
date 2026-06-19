@@ -385,6 +385,16 @@ func TestEnsureRepoUpdatesExistingOrigin(t *testing.T) {
 	}
 }
 
+func TestPublishTagRequiresCommitBeforeWriting(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if _, err := Publish(context.Background(), nil, PublishOptions{RepoPath: repo, Tag: "snapshot/test"}); err == nil {
+		t.Fatal("expected tag without commit to fail")
+	}
+	if _, err := os.Stat(repo); !os.IsNotExist(err) {
+		t.Fatalf("failed tagged publish should not create repo: %v", err)
+	}
+}
+
 func TestPublishCommitsOnlyGeneratedSnapshotFiles(t *testing.T) {
 	ctx := context.Background()
 	repo := filepath.Join(t.TempDir(), "repo")
@@ -438,20 +448,21 @@ func TestUpdatePullsExistingOriginWhenRemoteNotConfigured(t *testing.T) {
 	}
 	runGitForTest(t, seed, "init", "-b", "main")
 	src, mdDir := snapshotStoreForTest(t, ctx, "Old", "old snapshot")
-	if _, err := Publish(ctx, src, PublishOptions{RepoPath: seed, MarkdownDir: mdDir, Commit: true}); err != nil {
+	oldSummary, err := Publish(ctx, src, PublishOptions{RepoPath: seed, Remote: remote, MarkdownDir: mdDir, Commit: true, Push: true, Tag: "snapshot/old"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if oldSummary.Tag != "snapshot/old" {
+		t.Fatalf("published tag = %q", oldSummary.Tag)
 	}
 	if err := src.Close(); err != nil {
 		t.Fatal(err)
 	}
-	runGitForTest(t, seed, "remote", "add", "origin", remote)
-	runGitForTest(t, seed, "push", "-u", "origin", "main")
-
 	local := filepath.Join(dir, "local")
 	runGitForTest(t, dir, "clone", remote, local)
 
 	fresh, freshMD := snapshotStoreForTest(t, ctx, "Fresh", "fresh snapshot")
-	if _, err := Publish(ctx, fresh, PublishOptions{RepoPath: seed, Remote: remote, MarkdownDir: freshMD, Commit: true, Push: true}); err != nil {
+	if _, err := Publish(ctx, fresh, PublishOptions{RepoPath: seed, Remote: remote, MarkdownDir: freshMD, Commit: true, Push: true, Tag: "snapshot/fresh"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := fresh.Close(); err != nil {
@@ -472,6 +483,25 @@ func TestUpdatePullsExistingOriginWhenRemoteNotConfigured(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Title != "Fresh" {
 		t.Fatalf("expected fresh pulled snapshot, got %#v", results)
+	}
+	currentHead := strings.TrimSpace(gitOutputForTest(t, local, "rev-parse", "HEAD"))
+	manifest, resolved, err := UpdateAt(ctx, dst, "", local, "main", "snapshot/old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved == "" || manifest.GeneratedAt == "" {
+		t.Fatalf("historical update missing ref or manifest: ref=%q manifest=%+v", resolved, manifest)
+	}
+	results, err = dst.Search(ctx, "old", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Title != "Old" {
+		t.Fatalf("expected old historical snapshot, got %#v", results)
+	}
+	afterHead := strings.TrimSpace(gitOutputForTest(t, local, "rev-parse", "HEAD"))
+	if afterHead != currentHead {
+		t.Fatalf("historical update changed checkout from %s to %s", currentHead, afterHead)
 	}
 }
 

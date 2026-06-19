@@ -114,9 +114,9 @@ Default paths:
 - `search` searches page and comment text through FTS5
 - `tui` opens the terminal archive browser for pages and databases
 - `sql` runs read-only SQL against the archive
-- `publish` exports SQLite tables and Markdown into a git share repo
+- `publish` exports SQLite tables and Markdown into a git share repo; `--tag` names an immutable checkpoint
 - `subscribe` clones a share repo and imports the latest snapshot
-- `update` pulls and imports a subscribed share repo
+- `update` pulls and imports a subscribed share repo; `--ref` imports a historical tag, commit, or branch without changing the checkout
 
 ## Shared crawlkit surfaces
 

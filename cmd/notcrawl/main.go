@@ -1292,6 +1292,7 @@ func runPublish(ctx context.Context, stdout io.Writer, cfg config.Config, args [
 	repo := fs.String("repo", cfg.Share.RepoPath, "share repo path")
 	branch := fs.String("branch", cfg.Share.Branch, "share branch")
 	message := fs.String("message", "archive: notcrawl snapshot", "commit message")
+	tag := fs.String("tag", "", "immutable snapshot tag")
 	push := fs.Bool("push", false, "push after commit")
 	noCommit := fs.Bool("no-commit", false, "write snapshot without committing")
 	if err := fs.Parse(args); err != nil {
@@ -1307,12 +1308,16 @@ func runPublish(ctx context.Context, stdout io.Writer, cfg config.Config, args [
 	}
 	s, err := share.Publish(ctx, st, share.PublishOptions{
 		RepoPath: *repo, Remote: *remote, Branch: *branch, MarkdownDir: cfg.MarkdownDir,
-		Message: *message, Push: *push, Commit: !*noCommit,
+		Message: *message, Push: *push, Commit: !*noCommit, Tag: *tag,
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "published %d tables to %s committed=%t pushed=%t\n", len(s.Manifest.Tables), *repo, s.Committed, s.Pushed)
+	if s.Tag == "" {
+		fmt.Fprintf(stdout, "published %d tables to %s committed=%t pushed=%t\n", len(s.Manifest.Tables), *repo, s.Committed, s.Pushed)
+	} else {
+		fmt.Fprintf(stdout, "published %d tables to %s committed=%t pushed=%t tag=%s\n", len(s.Manifest.Tables), *repo, s.Committed, s.Pushed, s.Tag)
+	}
 	return nil
 }
 
@@ -1344,6 +1349,7 @@ func runUpdate(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
 	repo := fs.String("repo", cfg.Share.RepoPath, "share repo path")
 	branch := fs.String("branch", cfg.Share.Branch, "share branch")
+	ref := fs.String("ref", "", "historical tag, commit, or branch")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1352,11 +1358,15 @@ func runUpdate(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 		return err
 	}
 	defer st.Close()
-	manifest, err := share.Update(ctx, st, cfg.Share.Remote, *repo, *branch)
+	manifest, resolvedRef, err := share.UpdateAt(ctx, st, cfg.Share.Remote, *repo, *branch, *ref)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "updated tables=%d generated_at=%s\n", len(manifest.Tables), manifest.GeneratedAt)
+	if resolvedRef == "" {
+		fmt.Fprintf(stdout, "updated tables=%d generated_at=%s\n", len(manifest.Tables), manifest.GeneratedAt)
+	} else {
+		fmt.Fprintf(stdout, "updated ref=%s tables=%d generated_at=%s\n", resolvedRef, len(manifest.Tables), manifest.GeneratedAt)
+	}
 	return nil
 }
 
@@ -1482,8 +1492,9 @@ Commands:
   search [--limit N] QUERY  Search page text
   tui                       Browse pages and databases in the terminal UI
   sql QUERY                 Run read-only SQL
-  publish [--push]          Export data and Markdown into a git share repo
+  publish [--push] [--tag NAME]
+                            Export data and Markdown into a git share repo
   subscribe REMOTE          Clone/import a git share repo
-  update                    Pull/import a git share repo
+  update [--ref REF]        Pull/import current or historical git share data
 `)
 }

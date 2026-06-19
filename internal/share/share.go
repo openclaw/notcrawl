@@ -8,15 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/openclaw/crawlkit/mirror"
+	cksnapshot "github.com/openclaw/crawlkit/snapshot"
 	"github.com/openclaw/notcrawl/internal/store"
 )
 
@@ -52,12 +51,14 @@ type PublishOptions struct {
 	Message     string
 	Push        bool
 	Commit      bool
+	Tag         string
 }
 
 type PublishSummary struct {
 	Manifest  Manifest
 	Committed bool
 	Pushed    bool
+	Tag       string
 }
 
 func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (PublishSummary, error) {
@@ -70,7 +71,13 @@ func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (Publish
 	if opts.Message == "" {
 		opts.Message = "archive: notcrawl snapshot"
 	}
+	if strings.TrimSpace(opts.Tag) != "" && !opts.Commit {
+		return PublishSummary{}, fmt.Errorf("snapshot tag requires a commit")
+	}
 	if err := ensureRepo(ctx, opts.RepoPath, opts.Remote, opts.Branch); err != nil {
+		return PublishSummary{}, err
+	}
+	if err := mirror.ValidateTag(ctx, mirror.Options{RepoPath: opts.RepoPath, Remote: opts.Remote, Branch: opts.Branch}, opts.Tag); err != nil {
 		return PublishSummary{}, err
 	}
 	dataRoot := filepath.Join(opts.RepoPath, "data")
@@ -102,18 +109,27 @@ func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (Publish
 	}); err != nil {
 		return PublishSummary{}, err
 	}
-	pagesKeep := map[string]bool{}
+	pagesSynced := false
 	if opts.MarkdownDir != "" {
-		var err error
-		pagesKeep, err = copyDir(opts.MarkdownDir, pagesRoot)
-		if err != nil && !os.IsNotExist(err) {
+		_, err := cksnapshot.SyncSidecarTree(ctx, cksnapshot.SidecarTreeOptions{
+			SourceDir: opts.MarkdownDir,
+			RootDir:   opts.RepoPath,
+			TargetDir: "pages",
+			Kind:      "markdown",
+			Prune:     func(path string) bool { return strings.HasSuffix(path, ".md") },
+		})
+		if err == nil {
+			pagesSynced = true
+		} else if !errors.Is(err, os.ErrNotExist) {
 			return PublishSummary{}, err
 		}
 	}
-	if err := pruneGeneratedFiles(pagesRoot, pagesKeep, func(path string) bool {
-		return strings.HasSuffix(path, ".md")
-	}); err != nil {
-		return PublishSummary{}, err
+	if !pagesSynced {
+		if err := pruneGeneratedFiles(pagesRoot, map[string]bool{}, func(path string) bool {
+			return strings.HasSuffix(path, ".md")
+		}); err != nil {
+			return PublishSummary{}, err
+		}
 	}
 	b, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -130,8 +146,22 @@ func Publish(ctx context.Context, st *store.Store, opts PublishOptions) (Publish
 		}
 		s.Committed = committed
 	}
+	if strings.TrimSpace(opts.Tag) != "" {
+		tag, err := mirror.CreateImmutableTag(ctx, mirror.Options{RepoPath: opts.RepoPath, Remote: opts.Remote, Branch: opts.Branch}, opts.Tag)
+		if err != nil {
+			return s, err
+		}
+		s.Tag = tag
+	}
 	if opts.Push {
-		if err := mirror.Push(ctx, mirror.Options{RepoPath: opts.RepoPath, Remote: opts.Remote, Branch: opts.Branch}); err != nil {
+		mirrorOpts := mirror.Options{RepoPath: opts.RepoPath, Remote: opts.Remote, Branch: opts.Branch}
+		var err error
+		if strings.TrimSpace(opts.Tag) == "" {
+			err = mirror.Push(ctx, mirrorOpts)
+		} else {
+			err = mirror.PushAtomic(ctx, mirrorOpts, "HEAD:refs/heads/"+opts.Branch, "refs/tags/"+opts.Tag)
+		}
+		if err != nil {
 			return s, err
 		}
 		s.Pushed = true
@@ -196,6 +226,23 @@ func Import(ctx context.Context, st *store.Store, repoPath string) (Manifest, er
 }
 
 func validateManifest(repoPath string, manifest Manifest) error {
+	if err := validateManifestShape(manifest); err != nil {
+		return err
+	}
+	for _, table := range manifest.Tables {
+		if err := validateManifestFile(repoPath, table.Path); err != nil {
+			return fmt.Errorf("snapshot table %s: %w", table.Name, err)
+		}
+	}
+	if manifest.RecordSources != nil {
+		if err := validateManifestFile(repoPath, manifest.RecordSources.Path); err != nil {
+			return fmt.Errorf("record_sources snapshot: %w", err)
+		}
+	}
+	return nil
+}
+
+func validateManifestShape(manifest Manifest) error {
 	expected := make(map[string]bool, len(exportTables))
 	for _, table := range exportTables {
 		expected[table] = true
@@ -212,7 +259,7 @@ func validateManifest(repoPath string, manifest Manifest) error {
 			return fmt.Errorf("duplicate snapshot table %q", table.Name)
 		}
 		seen[table.Name] = true
-		if err := validateManifestFile(repoPath, table.Path); err != nil {
+		if err := validateRelativeSnapshotPath(table.Path); err != nil {
 			return fmt.Errorf("snapshot table %s: %w", table.Name, err)
 		}
 	}
@@ -228,9 +275,17 @@ func validateManifest(repoPath string, manifest Manifest) error {
 		if manifest.RecordSources.Name != "record_sources" {
 			return fmt.Errorf("invalid record_sources table name %q", manifest.RecordSources.Name)
 		}
-		if err := validateManifestFile(repoPath, manifest.RecordSources.Path); err != nil {
+		if err := validateRelativeSnapshotPath(manifest.RecordSources.Path); err != nil {
 			return fmt.Errorf("record_sources snapshot: %w", err)
 		}
+	}
+	return nil
+}
+
+func validateRelativeSnapshotPath(value string) error {
+	clean := filepath.Clean(strings.TrimSpace(value))
+	if clean == "." || clean == ".." || filepath.IsAbs(clean) || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes snapshot repository: %s", value)
 	}
 	return nil
 }
@@ -293,17 +348,84 @@ func Subscribe(ctx context.Context, st *store.Store, remote, repoPath, branch st
 }
 
 func Update(ctx context.Context, st *store.Store, remote, repoPath, branch string) (Manifest, error) {
+	manifest, _, err := UpdateAt(ctx, st, remote, repoPath, branch, "")
+	return manifest, err
+}
+
+func UpdateAt(ctx context.Context, st *store.Store, remote, repoPath, branch, ref string) (Manifest, string, error) {
 	if branch == "" {
 		branch = "main"
 	}
-	if err := pullForUpdate(ctx, repoPath, remote, branch); err != nil {
-		return Manifest{}, err
+	if strings.TrimSpace(ref) != "" {
+		opts := mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch}
+		if err := mirror.Fetch(ctx, opts); err != nil {
+			return Manifest{}, "", err
+		}
+		return importAtRef(ctx, st, opts, ref)
 	}
-	return Import(ctx, st, repoPath)
+	if err := pullForUpdate(ctx, repoPath, remote, branch); err != nil {
+		return Manifest{}, "", err
+	}
+	manifest, err := Import(ctx, st, repoPath)
+	return manifest, "", err
+}
+
+func importAtRef(ctx context.Context, st *store.Store, opts mirror.Options, ref string) (Manifest, string, error) {
+	body, commit, err := mirror.ReadFileAt(ctx, opts, ref, "manifest.json")
+	if err != nil {
+		return Manifest{}, "", err
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return Manifest{}, "", err
+	}
+	for i := range manifest.Tables {
+		manifest.Tables[i].Path = filepath.ToSlash(manifest.Tables[i].Path)
+	}
+	if manifest.RecordSources != nil {
+		manifest.RecordSources.Path = filepath.ToSlash(manifest.RecordSources.Path)
+	}
+	if err := validateManifestShape(manifest); err != nil {
+		return manifest, "", err
+	}
+	temp, err := os.MkdirTemp("", "notcrawl-share-ref-*")
+	if err != nil {
+		return manifest, "", err
+	}
+	defer func() { _ = os.RemoveAll(temp) }()
+	manifestBody, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return manifest, "", err
+	}
+	if err := os.WriteFile(filepath.Join(temp, "manifest.json"), append(manifestBody, '\n'), 0o600); err != nil {
+		return manifest, "", err
+	}
+	tables := append([]TableManifest(nil), manifest.Tables...)
+	if manifest.RecordSources != nil {
+		tables = append(tables, *manifest.RecordSources)
+	}
+	for _, table := range tables {
+		data, resolved, err := mirror.ReadFileAt(ctx, opts, commit, table.Path)
+		if err != nil {
+			return manifest, "", err
+		}
+		if resolved != commit {
+			return manifest, "", fmt.Errorf("share ref changed while reading %s", table.Path)
+		}
+		target := filepath.Join(temp, filepath.FromSlash(table.Path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			return manifest, "", err
+		}
+		if err := os.WriteFile(target, data, 0o600); err != nil {
+			return manifest, "", err
+		}
+	}
+	imported, err := Import(ctx, st, temp)
+	return imported, commit, err
 }
 
 func exportTable(ctx context.Context, db *sql.DB, repoPath, table string) (TableManifest, error) {
-	path := filepath.Join("data", table+".jsonl.gz")
+	path := filepath.ToSlash(filepath.Join("data", table+".jsonl.gz"))
 	full := filepath.Join(repoPath, path)
 	out, err := os.Create(full)
 	if err != nil {
@@ -416,127 +538,25 @@ func rebuildRecordSources(ctx context.Context, db sqlExecer) error {
 }
 
 func ensureRepo(ctx context.Context, repoPath, remote, branch string) error {
-	if err := mirror.EnsureRepo(ctx, mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch}); err != nil {
-		return err
+	opts := mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch}
+	if strings.TrimSpace(remote) != "" {
+		return mirror.EnsureRemote(ctx, opts)
 	}
-	remote = strings.TrimSpace(remote)
-	if remote == "" {
-		return nil
-	}
-	if err := runGit(ctx, repoPath, "remote", "set-url", "origin", remote); err != nil {
-		if strings.Contains(err.Error(), "No such remote") {
-			return runGit(ctx, repoPath, "remote", "add", "origin", remote)
-		}
-		return err
-	}
-	return nil
+	return mirror.EnsureRepo(ctx, opts)
 }
 
 func pullForUpdate(ctx context.Context, repoPath, remote, branch string) error {
 	if strings.TrimSpace(remote) != "" {
 		return mirror.Pull(ctx, mirror.Options{RepoPath: repoPath, Remote: remote, Branch: branch})
 	}
-	if err := ensureRepo(ctx, repoPath, "", branch); err != nil {
-		return err
-	}
-	return runGit(ctx, repoPath, "pull", "--ff-only", "origin", branch)
+	return mirror.PullCurrent(ctx, mirror.Options{RepoPath: repoPath, Branch: branch})
 }
 
 func commitGenerated(ctx context.Context, repoPath, message string) (bool, error) {
 	if message == "" {
 		message = "archive: notcrawl snapshot"
 	}
-	if err := runGit(ctx, repoPath, "add", "--", "manifest.json", "data", "pages"); err != nil {
-		return false, err
-	}
-	staged, err := hasStagedGeneratedChanges(ctx, repoPath)
-	if err != nil {
-		return false, err
-	}
-	if !staged {
-		return false, nil
-	}
-	if err := runGit(ctx, repoPath,
-		"-c", "commit.gpgsign=false",
-		"-c", "user.name=crawlkit",
-		"-c", "user.email=crawlkit@example.invalid",
-		"commit", "-m", message, "--", "manifest.json", "data", "pages",
-	); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func hasStagedGeneratedChanges(ctx context.Context, repoPath string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "git", "-C", repoPath, "diff", "--cached", "--quiet", "--exit-code", "--", "manifest.json", "data", "pages")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return false, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return true, nil
-	}
-	return false, fmt.Errorf("git diff --cached: %w\n%s", err, strings.TrimSpace(string(out)))
-}
-
-func runGit(ctx context.Context, dir string, args ...string) error {
-	return run(ctx, dir, "git", append([]string{"-C", dir}, args...)...)
-}
-
-func run(ctx context.Context, dir, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func copyDir(src, dst string) (map[string]bool, error) {
-	info, err := os.Stat(src)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", src)
-	}
-	keep := map[string]bool{}
-	err = filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		if rel == "." {
-			return os.MkdirAll(dst, 0o755)
-		}
-		target := filepath.Join(dst, rel)
-		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
-		}
-		in, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-		if _, err := io.Copy(out, in); err != nil {
-			return err
-		}
-		keep[filepath.Clean(target)] = true
-		return nil
-	})
-	return keep, err
+	return mirror.CommitPaths(ctx, mirror.Options{RepoPath: repoPath}, message, []string{"manifest.json", "data", "pages"})
 }
 
 func pruneGeneratedFiles(root string, keep map[string]bool, shouldPrune func(string) bool) error {

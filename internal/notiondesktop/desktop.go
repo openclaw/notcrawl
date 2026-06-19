@@ -4,20 +4,22 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/openclaw/crawlkit/cache"
 	"github.com/openclaw/notcrawl/internal/notiontext"
 	"github.com/openclaw/notcrawl/internal/store"
 	_ "modernc.org/sqlite"
 )
 
-const SourceName = "desktop"
-const desktopSnapshotRetention = 2
+const (
+	SourceName               = "desktop"
+	desktopSnapshotRetention = 2
+)
 
 type Source struct {
 	Path      string
@@ -103,33 +105,12 @@ func Ingest(ctx context.Context, st *store.Store, path, cacheDir string) (Summar
 }
 
 func snapshotDB(path, cacheDir string) (string, error) {
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return "", err
-	}
-	in, err := os.Open(path)
+	name := fmt.Sprintf("notion-desktop-%d.db", time.Now().UnixMilli())
+	snapshot, err := cache.SnapshotSQLite(cache.SQLiteSnapshotOptions{SourcePath: path, DestinationDir: cacheDir, Name: name})
 	if err != nil {
 		return "", err
 	}
-	defer in.Close()
-	outPath := filepath.Join(cacheDir, fmt.Sprintf("notion-desktop-%d.db", time.Now().UnixMilli()))
-	out, err := os.OpenFile(outPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return "", err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return "", err
-	}
-	for _, suffix := range []string{"-wal", "-shm"} {
-		src := path + suffix
-		if _, err := os.Stat(src); err == nil {
-			if err := copyFile(src, outPath+suffix, 0o600); err != nil {
-				return "", err
-			}
-		} else if !os.IsNotExist(err) {
-			return "", err
-		}
-	}
+	outPath := snapshot.Path
 	if err := pruneDesktopSnapshots(cacheDir, desktopSnapshotRetention, outPath); err != nil {
 		return "", err
 	}
@@ -187,21 +168,6 @@ func pruneDesktopSnapshots(cacheDir string, keep int, current string) error {
 		}
 	}
 	return nil
-}
-
-func copyFile(src, dst string, perm os.FileMode) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
 }
 
 func ingestSpaces(ctx context.Context, st *store.Store, db *sql.DB) (int, error) {

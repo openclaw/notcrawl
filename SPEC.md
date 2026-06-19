@@ -162,12 +162,15 @@ data/*.jsonl.gz
 pages/**/*.md
 ```
 
-`publish` writes a snapshot and optionally commits/pushes it.
+`publish` writes a snapshot and optionally commits/pushes it. `--tag` attaches
+an immutable Git checkpoint to the resulting commit.
 
 `subscribe` clones a snapshot repo, writes reader config, and imports data into
 SQLite without requiring Notion credentials.
 
-`update` pulls the latest snapshot and imports it.
+`update` pulls the latest snapshot and imports it. `update --ref REF` reads the
+manifest and table objects at a tag, commit, or branch without changing the
+share checkout.
 
 ## Database Export
 
