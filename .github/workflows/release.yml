@@ -64,7 +64,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish release from Release Drafter
-        uses: release-drafter/release-drafter@af23998d8b06daff2beb4e55195698d0df971769
+        uses: release-drafter/release-drafter@ed4bc48ec97379be2258e7b7ac2624a3e26ab809
         with:
           publish: true
           tag: ${{ env.RELEASE_TAG }}
