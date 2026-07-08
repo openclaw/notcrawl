@@ -3,9 +3,12 @@ package notionapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openclaw/notcrawl/internal/store"
@@ -617,6 +620,40 @@ func TestWalkBlocksFetchesOriginalSyncedBlockChildren(t *testing.T) {
 	}
 	if len(blocks) != 2 || blocks[0].ID != "source1" || blocks[1].ID != "child1" {
 		t.Fatalf("unexpected blocks: %+v", blocks)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestDoRetriesTransportError(t *testing.T) {
+	attempts := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("read: connection reset by peer")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"object":"list","results":[],"has_more":false}`)),
+			Request:    req,
+		}, nil
+	})}
+
+	var out map[string]any
+	err := (Client{BaseURL: "https://api.notion.com/v1", Version: "2022-06-28", Token: "secret", HTTP: client}).do(context.Background(), http.MethodGet, "/users", nil, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempts)
+	}
+	if out["object"] != "list" {
+		t.Fatalf("unexpected response: %+v", out)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -541,6 +542,12 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		}
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
+			if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, err) {
+				if err := waitBeforeRetry(ctx, 0); err != nil {
+					return err
+				}
+				continue
+			}
 			return err
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -616,6 +623,13 @@ func shouldRetry(err notionAPIError) bool {
 		err.StatusCode == http.StatusServiceUnavailable ||
 		err.StatusCode == http.StatusGatewayTimeout ||
 		err.StatusCode == 524 // Cloudflare timeout, returned by Notion for transient upstream stalls.
+}
+
+func shouldRetryTransportError(ctx context.Context, err error) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }
 
 func retryAfter(header string, body []byte) time.Duration {
