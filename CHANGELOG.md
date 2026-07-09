@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.5.2 - Unreleased
+## 0.5.3 - Unreleased
+
+## 0.5.2 - 2026-07-09
 
 - Sign official macOS release binaries with the OpenClaw Foundation Developer ID while keeping local and cross-platform builds credential-free.
 - Update CrawlKit to v0.13.4 and refresh its hardened TOML dependency.
