@@ -1,0 +1,71 @@
+version: 2
+
+# Official macOS archives are built and signed separately on a managed Mac.
+# This config intentionally produces only credential-free Linux artifacts.
+project_name: notcrawl
+
+builds:
+  - id: notcrawl-linux
+    main: ./cmd/notcrawl
+    binary: notcrawl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -buildvcs=true
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: linux-bundles
+    ids:
+      - notcrawl-linux
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+      - SPEC.md
+      - config.example.toml
+
+checksum:
+  name_template: "sha256sums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^Merge pull request"
+      - "^Merge branch"
+
+nfpms:
+  - id: linux-packages
+    ids:
+      - notcrawl-linux
+    package_name: notcrawl
+    file_name_template: "{{ .ConventionalFileName }}"
+    homepage: https://github.com/openclaw/notcrawl
+    maintainer: Vincent Koc <vincent@vincentkoc.com>
+    description: Local-first Notion crawler into SQLite and normalized Markdown.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    section: utils
+    priority: optional
+    contents:
+      - src: ./README.md
+        dst: /usr/share/doc/notcrawl/README.md
+      - src: ./LICENSE
+        dst: /usr/share/doc/notcrawl/LICENSE
+      - src: ./config.example.toml
+        dst: /usr/share/doc/notcrawl/config.example.toml
