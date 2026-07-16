@@ -73,19 +73,22 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 			return err
 		}
 		for _, page := range pages {
-			count, comments, err := c.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true, FetchComments: true})
+			count, comments, warnings, err := c.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true, FetchComments: true})
 			if err != nil {
 				return err
 			}
 			s.Pages++
 			s.Blocks += count
 			s.Comments += comments
+			s.Warnings = append(s.Warnings, warnings...)
 		}
 		collections, err := c.searchCollections(ctx)
 		if err != nil {
 			return err
 		}
 		for _, collection := range collections {
+			// Database rows are ingested without FetchBlocks, so
+			// ingestCollection can never surface block-children warnings.
 			rows, err := c.ingestCollection(ctx, st, collection)
 			if err != nil {
 				return err
@@ -205,7 +208,7 @@ type ingestPageOptions struct {
 	FetchComments bool
 }
 
-func (c Client) ingestPage(ctx context.Context, st *store.Store, page obj, opts ingestPageOptions) (blockCount int, commentCount int, err error) {
+func (c Client) ingestPage(ctx context.Context, st *store.Store, page obj, opts ingestPageOptions) (blockCount int, commentCount int, warnings []string, err error) {
 	raw := notiontext.MarshalRaw(page)
 	props := marshalAny(page["properties"])
 	parent := page.mapObj("parent")
@@ -242,38 +245,48 @@ func (c Client) ingestPage(ctx context.Context, st *store.Store, page obj, opts 
 	}
 	if opts.FetchBlocks {
 		if err := st.ClearSyncState(ctx, SourceName, "page_blocks", p.ID); err != nil {
-			return 0, 0, err
+			return 0, 0, nil, err
 		}
 	}
 	if err := st.UpsertPage(ctx, p); err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	if !p.Alive {
 		if _, err := st.RetireSourcePageBlocks(ctx, SourceName, p.ID); err != nil {
-			return 0, 0, err
+			return 0, 0, nil, err
 		}
 		if _, err := st.RetireSourcePageComments(ctx, SourceName, p.ID); err != nil {
-			return 0, 0, err
+			return 0, 0, nil, err
 		}
-		return 0, 0, nil
+		return 0, 0, nil, nil
 	}
 	var blocks, comments int
+	var blockWarnings []string
 	if opts.FetchBlocks {
-		blocks, err = c.walkBlocks(ctx, st, p.ID, p.ID, p.SpaceID)
+		blocks, blockWarnings, err = c.walkBlocks(ctx, st, p.ID, p.ID, p.SpaceID)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, nil, err
 		}
-		if err := st.SetSyncState(ctx, SourceName, "page_blocks", p.ID, "complete"); err != nil {
-			return 0, 0, err
+		warnings = append(warnings, blockWarnings...)
+		// Only mark this page's block sync complete when every children batch
+		// was fetched; a skipped batch (e.g. an unsupported block type) must
+		// leave it unmarked so notion-mcp's automatic repair pass (see
+		// automaticCandidates in internal/notionmcp/client.go, which treats an
+		// unset api/page_blocks "complete" state as a repair candidate) keeps
+		// retrying it instead of the gap going untracked.
+		if len(blockWarnings) == 0 {
+			if err := st.SetSyncState(ctx, SourceName, "page_blocks", p.ID, "complete"); err != nil {
+				return 0, 0, nil, err
+			}
 		}
 	}
 	if opts.FetchComments {
 		comments, err = c.ingestComments(ctx, st, p.ID, p.SpaceID)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, warnings, err
 		}
 	}
-	return blocks, comments, nil
+	return blocks, comments, warnings, nil
 }
 
 func (c Client) ingestCollection(ctx context.Context, st *store.Store, collection obj) (int, error) {
@@ -337,7 +350,10 @@ func (c Client) queryCollection(ctx context.Context, st *store.Store, collection
 				}
 				continue
 			}
-			if _, _, err := c.ingestPage(ctx, st, obj(m), ingestPageOptions{CollectionID: collectionID}); err != nil {
+			// Row pages are ingested with FetchBlocks/FetchComments both
+			// false, so ingestPage never walks blocks here and its warnings
+			// return is always empty; nothing to propagate.
+			if _, _, _, err := c.ingestPage(ctx, st, obj(m), ingestPageOptions{CollectionID: collectionID}); err != nil {
 				return count, err
 			}
 			count++
@@ -370,23 +386,30 @@ func (c Client) usesDataSourceAPI() bool {
 	return c.Version >= "2025-09-03"
 }
 
-func (c Client) walkBlocks(ctx context.Context, st *store.Store, pageID, parentID, spaceID string) (int, error) {
+func (c Client) walkBlocks(ctx context.Context, st *store.Store, pageID, parentID, spaceID string) (int, []string, error) {
 	syncedAt, err := st.NextSourceSyncAt(ctx, "block", SourceName)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	count, err := c.walkBlocksAt(ctx, st, pageID, parentID, spaceID, syncedAt)
+	count, warnings, err := c.walkBlocksAt(ctx, st, pageID, parentID, spaceID, syncedAt)
 	if err != nil {
-		return count, err
+		return count, warnings, err
 	}
-	if _, err := st.RetireSourcePageBlocksNotSyncedAt(ctx, SourceName, pageID, syncedAt); err != nil {
-		return count, err
+	// A partial walk (some children batch was skipped, e.g. an unsupported
+	// block type) must not retire blocks this run never got a chance to
+	// re-fetch — otherwise a page that previously synced cleanly loses its
+	// existing content the moment it gains one unfetchable block.
+	if len(warnings) == 0 {
+		if _, err := st.RetireSourcePageBlocksNotSyncedAt(ctx, SourceName, pageID, syncedAt); err != nil {
+			return count, warnings, err
+		}
 	}
-	return count, nil
+	return count, warnings, nil
 }
 
-func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, parentID, spaceID string, syncedAt int64) (int, error) {
+func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, parentID, spaceID string, syncedAt int64) (int, []string, error) {
 	var count int
+	var warnings []string
 	cursor := ""
 	var displayOrder int64
 	for {
@@ -396,7 +419,12 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 		}
 		var resp obj
 		if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
-			return count, err
+			if isUnsupportedBlockChildrenError(err) {
+				warnings = append(warnings, fmt.Sprintf(
+					"Skipped children of block %s on page %s: %v", parentID, pageID, err))
+				return count, warnings, nil
+			}
+			return count, warnings, err
 		}
 		for _, item := range asSlice(resp["results"]) {
 			m, ok := item.(map[string]any)
@@ -426,23 +454,24 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 				RawJSON:        raw,
 				SyncedAt:       syncedAt,
 			}); err != nil {
-				return count, err
+				return count, warnings, err
 			}
 			count++
 			if shouldFetchBlockChildren(block) {
-				n, err := c.walkBlocksAt(ctx, st, pageID, block.string("id"), spaceID, syncedAt)
+				n, childWarnings, err := c.walkBlocksAt(ctx, st, pageID, block.string("id"), spaceID, syncedAt)
+				warnings = append(warnings, childWarnings...)
 				if err != nil {
-					return count, err
+					return count, warnings, err
 				}
 				count += n
 			}
 		}
 		if !truthy(resp["has_more"]) {
-			return count, nil
+			return count, warnings, nil
 		}
 		cursor, _ = resp["next_cursor"].(string)
 		if cursor == "" {
-			return count, nil
+			return count, warnings, nil
 		}
 	}
 }
@@ -666,6 +695,20 @@ func isIgnoredCommentError(err error) bool {
 func isRestrictedResourceError(err error) bool {
 	apiErr, ok := err.(notionAPIError)
 	return ok && apiErr.StatusCode == http.StatusForbidden && apiErr.Code == "restricted_resource"
+}
+
+// isUnsupportedBlockChildrenError reports whether err is Notion rejecting a
+// block-children listing because the batch contains a block type integrations
+// cannot receive (e.g. ai_block). Notion returns this as a 400 validation_error
+// rather than a per-block signal, so the whole children listing must be skipped.
+func isUnsupportedBlockChildrenError(err error) bool {
+	apiErr, ok := err.(notionAPIError)
+	if !ok {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusBadRequest &&
+		apiErr.Code == "validation_error" &&
+		strings.Contains(apiErr.Message, "not supported via the API")
 }
 
 func userName(u obj) string {

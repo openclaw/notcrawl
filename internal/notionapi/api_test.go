@@ -345,7 +345,7 @@ func TestIngestPageMarksBlockSyncOnlyAfterSuccessfulWalk(t *testing.T) {
 		},
 	}
 	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
-	if _, _, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true}); err != nil {
+	if _, _, _, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true}); err != nil {
 		t.Fatal(err)
 	}
 	synced, err := st.HasSyncState(ctx, SourceName, "page_blocks", "page1")
@@ -357,7 +357,7 @@ func TestIngestPageMarksBlockSyncOnlyAfterSuccessfulWalk(t *testing.T) {
 	}
 
 	failBlocks = true
-	if _, _, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true}); err == nil {
+	if _, _, _, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true}); err == nil {
 		t.Fatal("expected failed block walk")
 	}
 	synced, err = st.HasSyncState(ctx, SourceName, "page_blocks", "page1")
@@ -414,7 +414,7 @@ func TestIngestArchivedPageRestoresDesktopBlocksWithoutRefetching(t *testing.T) 
 			},
 		},
 	}
-	if _, _, err := (Client{BaseURL: server.URL, Token: "secret"}).ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true, FetchComments: true}); err != nil {
+	if _, _, _, err := (Client{BaseURL: server.URL, Token: "secret"}).ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true, FetchComments: true}); err != nil {
 		t.Fatal(err)
 	}
 	if requests != 0 {
@@ -440,6 +440,77 @@ func TestIngestArchivedPageRestoresDesktopBlocksWithoutRefetching(t *testing.T) 
 	}
 	if len(comments) != 1 || comments[0].Text != "Desktop comment" || comments[0].Source != "desktop" {
 		t.Fatalf("Desktop comment was not restored: %#v", comments)
+	}
+}
+
+func TestWalkBlocksDoesNotRetirePreviousBlocksOnPartialWalk(t *testing.T) {
+	syncNumber := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/blocks/page1/children" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		if syncNumber == 1 {
+			_, _ = w.Write([]byte(`{
+				"object":"list",
+				"results":[
+					{"object":"block","id":"para-a","type":"paragraph","has_children":false,
+					 "created_time":"2026-01-01T00:00:00Z","last_edited_time":"2026-01-01T00:00:00Z",
+					 "paragraph":{"rich_text":[{"plain_text":"A"}]}},
+					{"object":"block","id":"para-b","type":"paragraph","has_children":false,
+					 "created_time":"2026-01-01T00:00:00Z","last_edited_time":"2026-01-01T00:00:00Z",
+					 "paragraph":{"rich_text":[{"plain_text":"B"}]}}
+				],
+				"has_more":false
+			}`))
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{
+			"object":"error",
+			"status":400,
+			"code":"validation_error",
+			"message":"Block type ai_block is not supported via the API for your bot type."
+		}`))
+	}))
+	defer server.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
+	ctx := context.Background()
+
+	syncNumber = 1
+	if _, _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+	blocks, err := st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("expected 2 blocks after first sync, got %d", len(blocks))
+	}
+
+	// Simulate the page later gaining an unsupported block, which makes the
+	// whole children batch 400 on the second sync.
+	syncNumber = 2
+	_, warnings, err := client.walkBlocks(ctx, st, "page1", "page1", "space1")
+	if err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning from the partial second sync, got %+v", warnings)
+	}
+	blocks, err = st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("partial walk retired previously-synced blocks: got %d blocks, want 2", len(blocks))
 	}
 }
 
@@ -478,7 +549,7 @@ func TestWalkBlocksSkipsSyncedBlockCopyChildren(t *testing.T) {
 	}
 	defer st.Close()
 
-	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
+	count, _, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,6 +565,91 @@ func TestWalkBlocksSkipsSyncedBlockCopyChildren(t *testing.T) {
 	}
 	if len(blocks) != 1 || blocks[0].ID != "copy1" || blocks[0].Type != "synced_block" {
 		t.Fatalf("unexpected blocks: %+v", blocks)
+	}
+}
+
+func TestWalkBlocksSkipsUnsupportedBlockChildren(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/blocks/page1/children" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{
+			"object":"error",
+			"status":400,
+			"code":"validation_error",
+			"message":"Block type ai_block is not supported via the API for your bot type."
+		}`))
+	}))
+	defer server.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	count, warnings, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
+	if err != nil {
+		t.Fatalf("expected unsupported block children to be skipped, not fatal: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("unexpected block count: %d", count)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %+v", warnings)
+	}
+}
+
+func TestIngestPageLeavesIncompleteWhenBlockChildrenUnsupported(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/blocks/page1/children" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{
+			"object":"error",
+			"status":400,
+			"code":"validation_error",
+			"message":"Block type ai_block is not supported via the API for your bot type."
+		}`))
+	}))
+	defer server.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	page := obj{
+		"id":       "page1",
+		"archived": false,
+		"in_trash": false,
+		"parent":   map[string]any{"type": "workspace", "workspace": true},
+		"properties": map[string]any{
+			"Name": map[string]any{
+				"id": "title", "type": "title",
+				"title": []any{map[string]any{"plain_text": "Page"}},
+			},
+		},
+	}
+	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
+	_, _, warnings, err := client.ingestPage(ctx, st, page, ingestPageOptions{FetchBlocks: true})
+	if err != nil {
+		t.Fatalf("expected unsupported block children to be non-fatal: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("expected one warning, got %+v", warnings)
+	}
+	synced, err := st.HasSyncState(ctx, SourceName, "page_blocks", "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if synced {
+		t.Fatal("page with skipped block children was marked complete")
 	}
 }
 
@@ -531,7 +687,7 @@ func TestWalkBlocksRetiresMissingAPIBlocksAfterSuccessfulWalk(t *testing.T) {
 	}
 	defer st.Close()
 	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
-	if _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
+	if _, _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
 		t.Fatal(err)
 	}
 	blocks, err := st.PageBlocks(ctx, "page1")
@@ -543,7 +699,7 @@ func TestWalkBlocksRetiresMissingAPIBlocksAfterSuccessfulWalk(t *testing.T) {
 	}
 
 	includeBlock = false
-	if _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
+	if _, _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
 		t.Fatal(err)
 	}
 	blocks, err = st.PageBlocks(ctx, "page1")
@@ -601,7 +757,7 @@ func TestWalkBlocksFetchesOriginalSyncedBlockChildren(t *testing.T) {
 	}
 	defer st.Close()
 
-	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
+	count, _, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
 	if err != nil {
 		t.Fatal(err)
 	}
