@@ -551,8 +551,18 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 			return err
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			defer resp.Body.Close()
-			return json.NewDecoder(resp.Body).Decode(out)
+			responseBody, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, method, path, readErr) {
+					if err := waitBeforeRetry(ctx, 0); err != nil {
+						return err
+					}
+					continue
+				}
+				return readErr
+			}
+			return json.Unmarshal(responseBody, out)
 		}
 
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))

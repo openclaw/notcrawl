@@ -629,6 +629,22 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+type errorAfterDataReadCloser struct {
+	data []byte
+	err  error
+}
+
+func (r *errorAfterDataReadCloser) Read(p []byte) (int, error) {
+	if len(r.data) > 0 {
+		n := copy(p, r.data)
+		r.data = r.data[n:]
+		return n, nil
+	}
+	return 0, r.err
+}
+
+func (r *errorAfterDataReadCloser) Close() error { return nil }
+
 func TestDoRetriesTransportError(t *testing.T) {
 	attempts := 0
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -640,6 +656,38 @@ func TestDoRetriesTransportError(t *testing.T) {
 			StatusCode: http.StatusOK,
 			Header:     make(http.Header),
 			Body:       io.NopCloser(strings.NewReader(`{"object":"list","results":[],"has_more":false}`)),
+			Request:    req,
+		}, nil
+	})}
+
+	var out map[string]any
+	err := (Client{BaseURL: "https://api.notion.com/v1", Version: "2022-06-28", Token: "secret", HTTP: client}).do(context.Background(), http.MethodGet, "/users", nil, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempts)
+	}
+	if out["object"] != "list" {
+		t.Fatalf("unexpected response: %+v", out)
+	}
+}
+
+func TestDoRetriesTransportErrorWhileReadingResponse(t *testing.T) {
+	attempts := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		body := io.ReadCloser(io.NopCloser(strings.NewReader(`{"object":"list","results":[],"has_more":false}`)))
+		if attempts == 1 {
+			body = &errorAfterDataReadCloser{
+				data: []byte(`{"object":"list","results":`),
+				err:  errors.New("read: connection reset by peer"),
+			}
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       body,
 			Request:    req,
 		}, nil
 	})}
