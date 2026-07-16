@@ -38,6 +38,8 @@ brew install openclaw/tap/notcrawl
 
 You can also download archives, `.deb`, or `.rpm` packages from the
 [latest release](https://github.com/openclaw/notcrawl/releases/latest).
+Official macOS archives are signed with the OpenClaw Foundation Developer ID;
+local source and snapshot builds remain credential-free.
 
 Check for newer releases manually with:
 

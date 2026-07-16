@@ -1,164 +1,140 @@
-name: Release
+name: Release Validation
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Existing release tag to publish (for example: v0.1.0)"
+        description: "Published release tag to verify (for example: v0.1.0)"
         required: true
         type: string
 
 permissions:
-  actions: write
-  contents: write
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  RELEASE_TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
 
 jobs:
-  release:
+  verify-release-assets:
+    if: >-
+      github.event_name == 'release' ||
+      (endsWith(github.workflow_ref, format('@refs/heads/{0}', github.event.repository.default_branch)) &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout workflow ref
+      - name: Validate release tag
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: ${RELEASE_TAG}"
+            exit 1
+          fi
+
+      - name: Checkout trusted verifier
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      - name: Resolve release metadata
-        env:
-          TAG: ${{ inputs.tag_name || github.ref_name }}
-        run: |
-          set -euo pipefail
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z]+)*$ ]]; then
-            echo "Invalid release tag: ${TAG}"
-            exit 1
-          fi
-          echo "RELEASE_TAG=${TAG}" >> "$GITHUB_ENV"
-          echo "RELEASE_VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
 
       - name: Checkout release tag
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: refs/tags/${{ env.RELEASE_TAG }}
+          path: source
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version-file: trusted/go.mod
           cache: true
 
       - name: Run tests
+        working-directory: source
         run: go test ./...
 
-      - name: Build release artifacts
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --clean --skip=publish
+      - name: Download release assets
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Publish release from Release Drafter
-        uses: release-drafter/release-drafter@ed4bc48ec97379be2258e7b7ac2624a3e26ab809
-        with:
-          publish: true
-          tag: ${{ env.RELEASE_TAG }}
-          version: ${{ env.RELEASE_VERSION }}
-          name: "notcrawl ${{ env.RELEASE_TAG }}"
-          prerelease: ${{ contains(env.RELEASE_TAG, 'beta') || contains(env.RELEASE_TAG, 'alpha') || contains(env.RELEASE_TAG, 'rc') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload "${RELEASE_TAG}" \
-            dist/*.tar.gz \
-            dist/*.deb \
-            dist/*.rpm \
-            dist/sha256sums.txt \
-            --clobber
+          draft="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq .draft)"
+          test "$draft" = false
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir artifacts
 
-      - name: Evaluate Cloudsmith configuration
-        env:
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-          CLOUDSMITH_REPO_CONFIG: ${{ vars.CLOUDSMITH_REPO }}
+      - name: Install package inspection tools
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libarchive-tools
+
+      - name: Verify release asset manifest, checksums, and provenance
+        run: trusted/scripts/verify-notcrawl-release.sh "${RELEASE_TAG}" artifacts
+
+  verify-macos-assets:
+    if: >-
+      github.event_name == 'release' ||
+      (endsWith(github.workflow_ref, format('@refs/heads/{0}', github.event.repository.default_branch)) &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-15
+            arch: arm64
+          - runs-on: macos-15-intel
+            arch: amd64
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Validate release tag
+        shell: bash
         run: |
           set -euo pipefail
-          REPO="${CLOUDSMITH_REPO_CONFIG:-}"
-          if [ -z "${CLOUDSMITH_API_KEY}" ]; then
-            echo "CLOUDSMITH_ENABLED=0" >> "$GITHUB_ENV"
-            echo "Cloudsmith publish disabled (missing CLOUDSMITH_API_KEY)."
-          elif [ -z "${REPO}" ]; then
-            echo "CLOUDSMITH_ENABLED=0" >> "$GITHUB_ENV"
-            echo "Cloudsmith publish disabled (missing CLOUDSMITH_REPO variable)."
-          else
-            echo "CLOUDSMITH_ENABLED=1" >> "$GITHUB_ENV"
-            echo "CLOUDSMITH_REPO_EFFECTIVE=${REPO}" >> "$GITHUB_ENV"
+          if [[ ! "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: ${RELEASE_TAG}"
+            exit 1
           fi
 
-      - name: Install Cloudsmith CLI
-        if: ${{ env.CLOUDSMITH_ENABLED == '1' }}
-        run: |
-          set -euo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install cloudsmith-cli==1.11.1
+      - name: Checkout trusted verifier
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+          path: trusted
+          persist-credentials: false
 
-      - name: Publish APT packages to Cloudsmith
-        if: ${{ env.CLOUDSMITH_ENABLED == '1' }}
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: trusted/go.mod
+          cache: true
+
+      - name: Download signed macOS asset
+        shell: bash
         env:
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-          CLOUDSMITH_REPO: ${{ env.CLOUDSMITH_REPO_EFFECTIVE }}
-          CLOUDSMITH_APT_TARGETS: ${{ vars.CLOUDSMITH_APT_TARGETS }}
-          CLOUDSMITH_DISTRIBUTION: ${{ vars.CLOUDSMITH_DISTRIBUTION }}
-          CLOUDSMITH_RELEASE: ${{ vars.CLOUDSMITH_RELEASE }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          APT_TARGETS="${CLOUDSMITH_APT_TARGETS:-}"
+          version="${RELEASE_TAG#v}"
+          archive="notcrawl_${version}_darwin_${{ matrix.arch }}.tar.gz"
+          mkdir -p artifacts
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --dir artifacts \
+            --pattern "${archive}" \
+            --pattern "${archive}.sha256"
 
-          if [ -z "${APT_TARGETS}" ]; then
-            if [ -n "${CLOUDSMITH_DISTRIBUTION:-}" ] && [ -n "${CLOUDSMITH_RELEASE:-}" ]; then
-              APT_TARGETS="${CLOUDSMITH_DISTRIBUTION}/${CLOUDSMITH_RELEASE}"
-            else
-              APT_TARGETS="ubuntu/jammy,debian/trixie"
-            fi
-          fi
-
-          for target_path in $(printf '%s' "${APT_TARGETS}" | tr ',' ' '); do
-            [ -z "${target_path}" ] && continue
-            TARGET="${CLOUDSMITH_REPO}/${target_path}"
-            for pkg in dist/*.deb; do
-              cloudsmith push deb "${TARGET}" "${pkg}" --no-wait-for-sync
-            done
-          done
-
-      - name: Publish RPM packages to Cloudsmith
-        if: ${{ env.CLOUDSMITH_ENABLED == '1' }}
-        env:
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY }}
-          CLOUDSMITH_REPO: ${{ env.CLOUDSMITH_REPO_EFFECTIVE }}
-          CLOUDSMITH_RPM_DISTRIBUTION: ${{ vars.CLOUDSMITH_RPM_DISTRIBUTION }}
-          CLOUDSMITH_RPM_RELEASE: ${{ vars.CLOUDSMITH_RPM_RELEASE }}
+      - name: Verify Developer ID signature and tag provenance
+        shell: bash
         run: |
           set -euo pipefail
-          DISTRO="${CLOUDSMITH_RPM_DISTRIBUTION:-el}"
-          RELEASE="${CLOUDSMITH_RPM_RELEASE:-9}"
-          TARGET="${CLOUDSMITH_REPO}/${DISTRO}/${RELEASE}"
-
-          for pkg in dist/*.rpm; do
-            cloudsmith push rpm "${TARGET}" "${pkg}" --no-wait-for-sync
-          done
-
-  update-homebrew-tap:
-    needs: release
-    uses: ./.github/workflows/homebrew-tap.yml
-    with:
-      tag_name: ${{ inputs.tag_name || github.ref_name }}
-    secrets: inherit
+          version="${RELEASE_TAG#v}"
+          archive="artifacts/notcrawl_${version}_darwin_${{ matrix.arch }}.tar.gz"
+          trusted/scripts/verify-notcrawl-macos-release.sh "${RELEASE_TAG}" "${archive}"
