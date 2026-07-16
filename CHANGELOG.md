@@ -2,6 +2,7 @@
 
 ## 0.5.3 - Unreleased
 
+- Retry transient transport failures during read-only Notion API requests. Thanks @davelutztx.
 - Keep API sync running when Notion rejects unsupported block children, while preserving previously mirrored page content. Thanks @oliver-mee.
 
 ## 0.5.2 - 2026-07-09
