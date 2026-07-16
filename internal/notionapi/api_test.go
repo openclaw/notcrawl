@@ -657,6 +657,52 @@ func TestDoRetriesTransportError(t *testing.T) {
 	}
 }
 
+func TestDoRetriesTransportErrorForReadOnlyPost(t *testing.T) {
+	for _, path := range []string{"/search", "/databases/db1/query", "/data_sources/ds1/query"} {
+		t.Run(path, func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				attempts++
+				if attempts == 1 {
+					return nil, errors.New("read: connection reset by peer")
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(`{"object":"list","results":[],"has_more":false}`)),
+					Request:    req,
+				}, nil
+			})}
+
+			var out map[string]any
+			err := (Client{BaseURL: "https://api.notion.com/v1", Version: "2022-06-28", Token: "secret", HTTP: client}).do(context.Background(), http.MethodPost, path, map[string]any{"page_size": 100}, &out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if attempts != 2 {
+				t.Fatalf("expected 2 attempts, got %d", attempts)
+			}
+		})
+	}
+}
+
+func TestDoDoesNotRetryTransportErrorForUnknownPost(t *testing.T) {
+	attempts := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		return nil, errors.New("read: connection reset by peer")
+	})}
+
+	var out map[string]any
+	err := (Client{BaseURL: "https://api.notion.com/v1", Version: "2022-06-28", Token: "secret", HTTP: client}).do(context.Background(), http.MethodPost, "/pages", map[string]any{"title": "example"}, &out)
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if attempts != 1 {
+		t.Fatalf("expected one attempt for unknown POST, got %d", attempts)
+	}
+}
+
 func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

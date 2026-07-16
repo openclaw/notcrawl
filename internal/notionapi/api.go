@@ -542,7 +542,7 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		}
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
-			if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, err) {
+			if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, method, path, err) {
 				if err := waitBeforeRetry(ctx, 0); err != nil {
 					return err
 				}
@@ -625,11 +625,28 @@ func shouldRetry(err notionAPIError) bool {
 		err.StatusCode == 524 // Cloudflare timeout, returned by Notion for transient upstream stalls.
 }
 
-func shouldRetryTransportError(ctx context.Context, err error) bool {
+func shouldRetryTransportError(ctx context.Context, method, path string, err error) bool {
 	if err == nil || ctx.Err() != nil {
 		return false
 	}
-	return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+	return isReplaySafeRequest(method, path) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
+}
+
+func isReplaySafeRequest(method, path string) bool {
+	if method == http.MethodGet || method == http.MethodHead {
+		return true
+	}
+	if method != http.MethodPost {
+		return false
+	}
+	path, _, _ = strings.Cut(path, "?")
+	if path == "/search" {
+		return true
+	}
+	return (strings.HasPrefix(path, "/databases/") || strings.HasPrefix(path, "/data_sources/")) &&
+		strings.HasSuffix(path, "/query")
 }
 
 func retryAfter(header string, body []byte) time.Duration {
