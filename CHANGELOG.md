@@ -2,6 +2,8 @@
 
 ## 0.5.3 - Unreleased
 
+- Update CrawlKit to v0.14.2.
+
 ## 0.5.2 - 2026-07-09
 
 - Sign official macOS release binaries with the OpenClaw Foundation Developer ID while keeping local and cross-platform builds credential-free.
