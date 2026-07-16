@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -570,11 +571,27 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		}
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
+			if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, method, path, err) {
+				if err := waitBeforeRetry(ctx, 0); err != nil {
+					return err
+				}
+				continue
+			}
 			return err
 		}
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			defer resp.Body.Close()
-			return json.NewDecoder(resp.Body).Decode(out)
+			responseBody, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, method, path, readErr) {
+					if err := waitBeforeRetry(ctx, 0); err != nil {
+						return err
+					}
+					continue
+				}
+				return readErr
+			}
+			return json.Unmarshal(responseBody, out)
 		}
 
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
@@ -645,6 +662,30 @@ func shouldRetry(err notionAPIError) bool {
 		err.StatusCode == http.StatusServiceUnavailable ||
 		err.StatusCode == http.StatusGatewayTimeout ||
 		err.StatusCode == 524 // Cloudflare timeout, returned by Notion for transient upstream stalls.
+}
+
+func shouldRetryTransportError(ctx context.Context, method, path string, err error) bool {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	return isReplaySafeRequest(method, path) &&
+		!errors.Is(err, context.Canceled) &&
+		!errors.Is(err, context.DeadlineExceeded)
+}
+
+func isReplaySafeRequest(method, path string) bool {
+	if method == http.MethodGet || method == http.MethodHead {
+		return true
+	}
+	if method != http.MethodPost {
+		return false
+	}
+	path, _, _ = strings.Cut(path, "?")
+	if path == "/search" {
+		return true
+	}
+	return (strings.HasPrefix(path, "/databases/") || strings.HasPrefix(path, "/data_sources/")) &&
+		strings.HasSuffix(path, "/query")
 }
 
 func retryAfter(header string, body []byte) time.Duration {
