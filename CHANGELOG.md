@@ -1,10 +1,21 @@
 # Changelog
 
-## 0.5.3 - Unreleased
+## 0.5.3 - 2026-07-17
 
-- Retry transient transport failures during read-only Notion API requests. Thanks @davelutztx.
+### Highlights
+
+- Keep Notion API sync running when unsupported block children appear, preserve previously mirrored page content, and leave incomplete pages eligible for repair. Thanks @oliver-mee.
+- Retry transient request and response-body transport failures for read-only Notion API operations without replaying mutating requests. Thanks @davelutztx.
+
+### Dependencies
+
 - Update CrawlKit to v0.14.2.
-- Keep API sync running when Notion rejects unsupported block children, while preserving previously mirrored page content. Thanks @oliver-mee.
+- Update Kong to v1.16.0.
+- Update modernc.org/sqlite to v1.54.0.
+
+### Tooling
+
+- Update the GoReleaser, stale-issue, Release Drafter, and TruffleHog GitHub Actions.
 
 ## 0.5.2 - 2026-07-09
 
