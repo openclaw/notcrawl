@@ -98,6 +98,9 @@ jobs:
       - name: Test
         run: go test -count=1 ./...
 
+      - name: Test macOS release scripts
+        run: ./scripts/test-notcrawl-macos-release.sh
+
       - name: Build CLI
         run: go build -ldflags "-X main.version=ci" -o bin/notcrawl ./cmd/notcrawl
 

@@ -3,11 +3,12 @@
 `notcrawl` ships through GitHub Releases, Homebrew tap updates, and optional
 Cloudsmith APT/RPM repositories.
 
-Official macOS archives are signed with identifier `org.openclaw.notcrawl` by
-the OpenClaw Foundation Apple Developer Team `FWJYW4S8P8`. Ordinary builds and
-GoReleaser snapshots do not need signing credentials. The official publish path
-is local to an authorized maintainer Mac and fails closed unless both signed
-architecture archives pass verification.
+Official macOS archives are signed with hardened runtime and identifier
+`org.openclaw.notcrawl`, then notarized by the OpenClaw Foundation Apple
+Developer Team `FWJYW4S8P8`. Ordinary builds and GoReleaser snapshots do not
+need signing credentials. The official publish path is local to an authorized
+maintainer Mac and fails closed unless both architecture archives pass signing
+and notarization verification.
 
 ## Local Checks
 
@@ -58,28 +59,33 @@ make release-artifacts TAG=v0.1.0
 ```
 
 This builds Linux archives and packages without credentials, then uses
-`release-mac-app codesign-run` to build the two signed macOS archives. The step
-requires Rosetta so both architectures can execute. It rejects a dirty or
-mismatched checkout, an invalid tag signature, a missing managed identity, the
-wrong Team ID or identifier, stale build provenance, incomplete archive
-contents, and checksum/asset-set mismatches. Private keychain and credential
-routing belongs in the ignored `.mac-release.env` or another approved runtime
-environment.
+`release-mac-app codesign-run` to build, sign, and notarize the two thin macOS
+archives. The step requires Rosetta so both architectures can execute. It
+rejects a dirty or mismatched checkout, an invalid tag signature, a missing
+managed identity or notarization profile, the wrong Team ID or identifier, a
+rejected notarization submission, stale build provenance, incomplete archive
+contents, and checksum/asset-set mismatches. Set
+`NOTARYTOOL_KEYCHAIN_PROFILE` to an approved login-keychain profile at runtime;
+never place notarization credentials in the repository. Private signing
+keychain routing belongs in the ignored `.mac-release.env` or another approved
+runtime environment.
 
 After inspecting the exact 11-file manifest in `dist/release-assets/`, push
 `main` and the tag, attach those files to the Release Drafter draft, verify its
 notes contain the changelog, then publish it locally. The local preparation
 step is the pre-publication gate: it verifies the exact manifest, checksums,
-binary provenance, and both Developer ID signatures before any upload. CI never
-imports the Developer ID private key and never publishes release assets.
+binary provenance, both Developer ID signatures, hardened runtime, and Apple
+notarization tickets before any upload. CI never imports the Developer ID
+private key or notarization credentials and never publishes release assets.
 
 The read-only `Release Validation` workflow runs after publication using
 verifier code from the trusted default branch. It checks the exact asset
 manifest and checksums, tests the tagged source, verifies every Linux
 archive/package binary embeds the tag commit, and verifies each macOS binary
 natively against the Apple trust chain, Team ID, identifier, version,
-architecture, and embedded tag commit. The Homebrew workflow then updates the
-tap; Cloudsmith publication remains an explicit follow-up.
+architecture, embedded tag commit, and notarization ticket. The Homebrew
+workflow then updates the tap; Cloudsmith publication remains an explicit
+follow-up.
 
 ## Required Secrets
 
