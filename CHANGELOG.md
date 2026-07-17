@@ -5,6 +5,7 @@
 ### Tooling
 
 - Notarize both official macOS binaries and require Apple notarization verification before release publication.
+- Merge git-share imports without pruning local rows or tombstones, with explicit `--restore` replacement and optional `--retain-revisions` history.
 
 ## 0.5.3 - 2026-07-17
 

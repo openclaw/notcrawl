@@ -1341,9 +1341,15 @@ func runPublish(ctx context.Context, stdout io.Writer, cfg config.Config, args [
 
 func runSubscribe(ctx context.Context, stdout io.Writer, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("subscribe", flag.ContinueOnError)
+	fs.SetOutput(stdout)
 	repo := fs.String("repo", cfg.Share.RepoPath, "share repo path")
 	branch := fs.String("branch", cfg.Share.Branch, "share branch")
+	restore := fs.Bool("restore", false, "replace the local archive exactly, removing rows absent from the snapshot")
+	retainRevisions := fs.Bool("retain-revisions", false, "save replaced local rows in record_revisions")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	remote := cfg.Share.Remote
@@ -1355,20 +1361,30 @@ func runSubscribe(ctx context.Context, stdout io.Writer, cfg config.Config, args
 		return err
 	}
 	defer st.Close()
-	manifest, err := share.Subscribe(ctx, st, remote, *repo, *branch)
+	result, err := share.SubscribeWithOptions(ctx, st, remote, *repo, *branch, share.ImportOptions{
+		Restore:         *restore,
+		RetainRevisions: *retainRevisions,
+	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "subscribed %s tables=%d generated_at=%s\n", remote, len(manifest.Tables), manifest.GeneratedAt)
+	fmt.Fprintf(stdout, "subscribed %s mode=%s revisions=%d tables=%d generated_at=%s\n",
+		remote, result.Mode, result.Revisions, len(result.Manifest.Tables), result.Manifest.GeneratedAt)
 	return nil
 }
 
 func runUpdate(ctx context.Context, stdout io.Writer, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	fs.SetOutput(stdout)
 	repo := fs.String("repo", cfg.Share.RepoPath, "share repo path")
 	branch := fs.String("branch", cfg.Share.Branch, "share branch")
 	ref := fs.String("ref", "", "historical tag, commit, or branch")
+	restore := fs.Bool("restore", false, "replace the local archive exactly, removing rows absent from the snapshot")
+	retainRevisions := fs.Bool("retain-revisions", false, "save replaced local rows in record_revisions")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	st, err := store.Open(cfg.DBPath)
@@ -1376,14 +1392,19 @@ func runUpdate(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 		return err
 	}
 	defer st.Close()
-	manifest, resolvedRef, err := share.UpdateAt(ctx, st, cfg.Share.Remote, *repo, *branch, *ref)
+	result, resolvedRef, err := share.UpdateAtWithOptions(ctx, st, cfg.Share.Remote, *repo, *branch, *ref, share.ImportOptions{
+		Restore:         *restore,
+		RetainRevisions: *retainRevisions,
+	})
 	if err != nil {
 		return err
 	}
 	if resolvedRef == "" {
-		fmt.Fprintf(stdout, "updated tables=%d generated_at=%s\n", len(manifest.Tables), manifest.GeneratedAt)
+		fmt.Fprintf(stdout, "updated mode=%s revisions=%d tables=%d generated_at=%s\n",
+			result.Mode, result.Revisions, len(result.Manifest.Tables), result.Manifest.GeneratedAt)
 	} else {
-		fmt.Fprintf(stdout, "updated ref=%s tables=%d generated_at=%s\n", resolvedRef, len(manifest.Tables), manifest.GeneratedAt)
+		fmt.Fprintf(stdout, "updated ref=%s mode=%s revisions=%d tables=%d generated_at=%s\n",
+			resolvedRef, result.Mode, result.Revisions, len(result.Manifest.Tables), result.Manifest.GeneratedAt)
 	}
 	return nil
 }
@@ -1512,7 +1533,9 @@ Commands:
   sql QUERY                 Run read-only SQL
   publish [--push] [--tag NAME]
                             Export data and Markdown into a git share repo
-  subscribe REMOTE          Clone/import a git share repo
-  update [--ref REF]        Pull/import current or historical git share data
+  subscribe [--restore] [--retain-revisions] REMOTE
+                            Clone and merge a git share repo
+  update [--ref REF] [--restore] [--retain-revisions]
+                            Pull and merge current or historical git share data
 `)
 }

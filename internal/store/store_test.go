@@ -35,6 +35,143 @@ func TestStoreUpsertsAndSearchesPage(t *testing.T) {
 	}
 }
 
+func TestStoreRecordsAndClearsExplicitTombstoneMetadata(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	const deletedAt = int64(12345)
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Page", Alive: true, Source: "api", SyncedAt: deletedAt - 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Page", Alive: false, Source: "api", SyncedAt: deletedAt}); err != nil {
+		t.Fatal(err)
+	}
+	var gotDeletedAt int64
+	var source, reason string
+	if err := st.DB().QueryRowContext(ctx, `select deleted_at, deletion_source, deletion_reason
+		from record_sources where record_table = 'page' and record_id = 'page1' and source = 'api'`).Scan(
+		&gotDeletedAt, &source, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if gotDeletedAt != deletedAt || source != "api" || reason != "explicit-source-delete" {
+		t.Fatalf("tombstone metadata = %d %q %q", gotDeletedAt, source, reason)
+	}
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Restored", Alive: true, Source: "api", SyncedAt: deletedAt + 1}); err != nil {
+		t.Fatal(err)
+	}
+	var tombstoneFields int
+	if err := st.DB().QueryRowContext(ctx, `select
+		(deleted_at is not null) + (deletion_source is not null) + (deletion_reason is not null)
+		from record_sources where record_table = 'page' and record_id = 'page1' and source = 'api'`).Scan(&tombstoneFields); err != nil {
+		t.Fatal(err)
+	}
+	if tombstoneFields != 0 {
+		t.Fatalf("restored source retained %d tombstone fields", tombstoneFields)
+	}
+}
+
+func TestStoreRecordsAuthoritativeEnumerationTombstoneReason(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Page", Alive: true, Source: "api", SyncedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "text", Alive: true, Source: "api", SyncedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	retired, err := st.RetireSourcePageBlocksNotSyncedAt(ctx, "api", "page1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retired != 1 {
+		t.Fatalf("retired blocks = %d", retired)
+	}
+	var source, reason string
+	if err := st.DB().QueryRowContext(ctx, `select deletion_source, deletion_reason
+		from record_sources where record_table = 'block' and record_id = 'block1' and source = 'api'`).Scan(&source, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if source != "api" || reason != "complete-authoritative-enumeration" {
+		t.Fatalf("tombstone metadata = %q %q", source, reason)
+	}
+}
+
+func TestStoreRecordsParentDeleteTombstoneReason(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Page", Alive: true, Source: "api", SyncedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertBlock(ctx, Block{ID: "block1", PageID: "page1", ParentID: "page1", Type: "text", Alive: true, Source: "api", SyncedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertComment(ctx, Comment{ID: "comment1", PageID: "page1", Text: "Comment", Alive: true, Source: "api", SyncedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if retired, err := st.RetireSourcePageBlocks(ctx, "api", "page1"); err != nil || retired != 1 {
+		t.Fatalf("retired blocks=%d err=%v", retired, err)
+	}
+	if retired, err := st.RetireSourcePageComments(ctx, "api", "page1"); err != nil || retired != 1 {
+		t.Fatalf("retired comments=%d err=%v", retired, err)
+	}
+	for recordTable, recordID := range map[string]string{"block": "block1", "comment": "comment1"} {
+		var reason string
+		if err := st.DB().QueryRowContext(ctx, `select deletion_reason from record_sources
+			where record_table = ? and record_id = ? and source = 'api'`, recordTable, recordID).Scan(&reason); err != nil {
+			t.Fatal(err)
+		}
+		if reason != "parent-delete-event" {
+			t.Fatalf("%s deletion reason = %q", recordTable, reason)
+		}
+	}
+}
+
+func TestStoreMigratesLegacyTombstoneMetadata(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "notcrawl.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Page", Alive: false, Source: "api", SyncedAt: 123}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().ExecContext(ctx, `update record_sources set deleted_at = null, deletion_source = null, deletion_reason = null`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().ExecContext(ctx, `update meta set value = 3 where key = 'schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var deletedAt int64
+	var source, reason string
+	if err := st.DB().QueryRowContext(ctx, `select deleted_at, deletion_source, deletion_reason from record_sources
+		where record_table = 'page' and record_id = 'page1' and source = 'api'`).Scan(&deletedAt, &source, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if deletedAt != 123 || source != "api" || reason != "legacy-tombstone" {
+		t.Fatalf("migrated tombstone = %d %q %q", deletedAt, source, reason)
+	}
+}
+
 func TestStoreRestoresDesktopPayloadWhenAPISourceRetires(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))

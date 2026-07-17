@@ -14,7 +14,7 @@ import (
 	crawlstore "github.com/openclaw/crawlkit/store"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
 
 type Store struct {
 	db               *sql.DB
@@ -81,15 +81,19 @@ func (s *Store) queryRowContext(ctx context.Context, query string, args ...any) 
 }
 
 func (s *Store) WithTransaction(ctx context.Context, fn func() error) error {
+	return s.WithSQLTransaction(ctx, func(*sql.Tx) error { return fn() })
+}
+
+func (s *Store) WithSQLTransaction(ctx context.Context, fn func(*sql.Tx) error) error {
 	if s.tx != nil {
-		return fn()
+		return fn(s.tx)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	s.tx = tx
-	err = fn()
+	err = fn(tx)
 	s.tx = nil
 	if err != nil {
 		_ = tx.Rollback()
@@ -256,9 +260,22 @@ func (s *Store) init(ctx context.Context) error {
 			synced_at integer not null,
 			alive integer not null,
 			payload_json text,
+			deleted_at integer,
+			deletion_source text,
+			deletion_reason text,
 			primary key (record_table, record_id, source)
 		)`,
 		`create index if not exists record_sources_source_sync on record_sources(record_table, source, alive, synced_at)`,
+		`create table if not exists record_revisions (
+			id integer primary key autoincrement,
+			record_table text not null,
+			record_key text not null,
+			payload_json text not null,
+			recorded_at integer not null,
+			event_source text not null,
+			reason text not null
+		)`,
+		`create index if not exists record_revisions_record on record_revisions(record_table, record_key, recorded_at desc)`,
 		`create table if not exists sync_state (
 			source text not null,
 			entity_type text not null,
@@ -294,6 +311,15 @@ func (s *Store) init(ctx context.Context) error {
 	if err := s.ensureColumn(ctx, "record_sources", "payload_json", "text"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn(ctx, "record_sources", "deleted_at", "integer"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "record_sources", "deletion_source", "text"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "record_sources", "deletion_reason", "text"); err != nil {
+		return err
+	}
 	if _, err := s.execContext(ctx, `create index if not exists blocks_page_alive_order on blocks(page_id, alive, parent_id, display_order, created_time, id)`); err != nil {
 		return err
 	}
@@ -311,6 +337,13 @@ func (s *Store) init(ctx context.Context) error {
 		if _, err := s.execContext(ctx, stmt); err != nil {
 			return err
 		}
+	}
+	if _, err := s.execContext(ctx, `update record_sources set
+		deleted_at = coalesce(deleted_at, synced_at),
+		deletion_source = coalesce(deletion_source, source),
+		deletion_reason = coalesce(deletion_reason, 'legacy-tombstone')
+		where alive = 0`); err != nil {
+		return err
 	}
 	if _, err := s.execContext(ctx, `insert or replace into meta(key, value) values('schema_version', ?)`, schemaVersion); err != nil {
 		return err
@@ -667,20 +700,7 @@ func (s *Store) RetireSourcePageBlocks(ctx context.Context, source, pageID strin
 		return 0, err
 	}
 	for _, id := range ids {
-		if _, err := s.execContext(ctx, `update record_sources set alive = 0, payload_json = null
-			where record_table = 'block' and record_id = ? and source = ?`, id, source); err != nil {
-			return 0, err
-		}
-		canonicalSource, _, exists, err := s.canonicalRecordSource(ctx, "block", id)
-		if err != nil {
-			return 0, err
-		}
-		if exists && canonicalSource == source {
-			if _, err := s.promoteFallbackRecord(ctx, "block", id); err != nil {
-				return 0, err
-			}
-		}
-		if err := s.refreshRecordAlive(ctx, "block", id); err != nil {
+		if err := s.retireRecordSource(ctx, "block", id, source, "parent-delete-event"); err != nil {
 			return 0, err
 		}
 	}
@@ -726,7 +746,7 @@ func (s *Store) RetireSourcePageBlocksNotSyncedAt(ctx context.Context, source, p
 		return 0, err
 	}
 	for _, id := range ids {
-		if err := s.retireRecordSource(ctx, "block", id, source); err != nil {
+		if err := s.retireRecordSource(ctx, "block", id, source, "complete-authoritative-enumeration"); err != nil {
 			return 0, err
 		}
 	}
@@ -742,7 +762,7 @@ func (s *Store) RetireSourcePageComments(ctx context.Context, source, pageID str
 		return 0, err
 	}
 	for _, id := range ids {
-		if err := s.retireRecordSource(ctx, "comment", id, source); err != nil {
+		if err := s.retireRecordSource(ctx, "comment", id, source, "parent-delete-event"); err != nil {
 			return 0, err
 		}
 	}
@@ -780,9 +800,15 @@ func (s *Store) sourceCommentIDsForPage(ctx context.Context, source, pageID stri
 	return ids, rows.Err()
 }
 
-func (s *Store) retireRecordSource(ctx context.Context, recordTable, recordID, source string) error {
-	if _, err := s.execContext(ctx, `update record_sources set alive = 0, payload_json = null
-		where record_table = ? and record_id = ? and source = ?`, recordTable, recordID, source); err != nil {
+func (s *Store) retireRecordSource(ctx context.Context, recordTable, recordID, source, reason string) error {
+	if _, err := s.execContext(ctx, `update record_sources set
+		alive = 0,
+		payload_json = null,
+		deleted_at = ?,
+		deletion_source = ?,
+		deletion_reason = ?
+		where record_table = ? and record_id = ? and source = ?`,
+		NowMS(), source, reason, recordTable, recordID, source); err != nil {
 		return err
 	}
 	canonicalSource, _, exists, err := s.canonicalRecordSource(ctx, recordTable, recordID)
@@ -804,13 +830,27 @@ func (s *Store) retireRecordSource(ctx context.Context, recordTable, recordID, s
 }
 
 func (s *Store) upsertRecordSource(ctx context.Context, recordTable, recordID, source string, syncedAt int64, alive bool, payload string) error {
-	_, err := s.execContext(ctx, `insert into record_sources(record_table, record_id, source, synced_at, alive, payload_json)
-		values (?, ?, ?, ?, ?, nullif(?, ''))
+	var deletedAt any
+	var deletionSource any
+	var deletionReason any
+	if !alive {
+		deletedAt = syncedAt
+		deletionSource = source
+		deletionReason = "explicit-source-delete"
+	}
+	_, err := s.execContext(ctx, `insert into record_sources(
+		record_table, record_id, source, synced_at, alive, payload_json,
+		deleted_at, deletion_source, deletion_reason)
+		values (?, ?, ?, ?, ?, nullif(?, ''), ?, ?, ?)
 		on conflict(record_table, record_id, source) do update set
 			synced_at = excluded.synced_at,
 			alive = excluded.alive,
-			payload_json = excluded.payload_json`,
-		recordTable, recordID, source, syncedAt, BoolInt(alive), payload)
+			payload_json = excluded.payload_json,
+			deleted_at = excluded.deleted_at,
+			deletion_source = excluded.deletion_source,
+			deletion_reason = excluded.deletion_reason`,
+		recordTable, recordID, source, syncedAt, BoolInt(alive), payload,
+		deletedAt, deletionSource, deletionReason)
 	return err
 }
 

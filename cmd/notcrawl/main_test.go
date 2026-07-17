@@ -391,6 +391,30 @@ func TestMetadataDoesNotMarkPlainTextCommandsAsJSON(t *testing.T) {
 	}
 }
 
+func TestShareImportHelpDocumentsRetentionModes(t *testing.T) {
+	for _, command := range []struct {
+		name string
+		run  func(*bytes.Buffer) error
+	}{
+		{name: "subscribe", run: func(stdout *bytes.Buffer) error {
+			return runSubscribe(context.Background(), stdout, config.Config{}, []string{"--help"})
+		}},
+		{name: "update", run: func(stdout *bytes.Buffer) error {
+			return runUpdate(context.Background(), stdout, config.Config{}, []string{"--help"})
+		}},
+	} {
+		var stdout bytes.Buffer
+		if err := command.run(&stdout); err != nil {
+			t.Fatalf("%s help: %v", command.name, err)
+		}
+		for _, flag := range []string{"-restore", "-retain-revisions"} {
+			if !strings.Contains(stdout.String(), flag) {
+				t.Fatalf("%s help missing %s:\n%s", command.name, flag, stdout.String())
+			}
+		}
+	}
+}
+
 func TestSyncEmitsProgressPercentToStderr(t *testing.T) {
 	dir := t.TempDir()
 	var stdout, stderr bytes.Buffer

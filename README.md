@@ -117,8 +117,8 @@ Default paths:
 - `tui` opens the terminal archive browser for pages and databases
 - `sql` runs read-only SQL against the archive
 - `publish` exports SQLite tables and Markdown into a git share repo; `--tag` names an immutable checkpoint
-- `subscribe` clones a share repo and imports the latest snapshot
-- `update` pulls and imports a subscribed share repo; `--ref` imports a historical tag, commit, or branch without changing the checkout
+- `subscribe` clones a share repo and merges the latest snapshot into local rows; `--restore` opts into exact replacement and `--retain-revisions` saves replaced local payloads in the local-only `record_revisions` table
+- `update` merges current or `--ref` historical share data without changing the checkout; `--restore` and `--retain-revisions` select the same retention modes
 
 ## Shared crawlkit surfaces
 

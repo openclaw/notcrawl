@@ -204,8 +204,254 @@ func TestImportLegacySnapshotRebuildsSourceProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pages) != 1 || pages[0].ID != "page1" {
-		t.Fatalf("legacy import retained stale destination rows: %#v", pages)
+	if len(pages) != 2 {
+		t.Fatalf("legacy merge removed destination rows: %#v", pages)
+	}
+	seen := map[string]bool{}
+	for _, page := range pages {
+		seen[page.ID] = true
+	}
+	if !seen["page1"] || !seen["stale"] {
+		t.Fatalf("legacy merge pages = %#v", pages)
+	}
+}
+
+func TestImportRestoreReplacesDestinationAndTombstoneState(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Remote live", "remote body")
+	defer src.Close()
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	now := store.NowMS()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local deleted", Alive: true, Source: "test", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local deleted", Alive: false, Source: "test", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.UpsertPage(ctx, store.Page{ID: "local-only", Title: "Local only", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ImportWithOptions(ctx, dst, repo, ImportOptions{Restore: true, RetainRevisions: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "restore" || result.Revisions != 4 {
+		t.Fatalf("import result = %+v", result)
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].ID != "page1" || pages[0].Title != "Remote live" || !pages[0].Alive {
+		t.Fatalf("restored pages = %#v", pages)
+	}
+	exists, alive, err := dst.RecordSourceState(ctx, "page", "page1", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !exists || !alive {
+		t.Fatalf("restored source state: exists=%v alive=%v", exists, alive)
+	}
+	var removedRevision string
+	if err := dst.DB().QueryRowContext(ctx, `select payload_json from record_revisions
+		where record_table = 'pages' and record_key like '%local-only%' and reason = 'snapshot-restore'`).Scan(&removedRevision); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(removedRevision, "Local only") {
+		t.Fatalf("restore revision payload = %s", removedRevision)
+	}
+}
+
+func TestImportMergePreservesLocalRowsAndTombstonesWithOptionalRevisions(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Remote live", "remote body")
+	defer src.Close()
+	if err := src.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Remote space", RawJSON: `{"name":"remote"}`, Source: "test", SyncedAt: store.NowMS()}); err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+		t.Fatal(err)
+	}
+
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	now := store.NowMS()
+	if err := dst.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Local space", RawJSON: `{"name":"local"}`, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.UpsertSpace(ctx, store.Space{ID: "rowid-sentinel", Name: "Sentinel", Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local deleted", Alive: true, Source: "test", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local deleted", Alive: false, Source: "test", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := dst.UpsertPage(ctx, store.Page{ID: "local-only", Title: "Local only", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var spaceRowID int64
+	if err := dst.DB().QueryRowContext(ctx, `select rowid from spaces where id = 'space1'`).Scan(&spaceRowID); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ImportWithOptions(ctx, dst, repo, ImportOptions{RetainRevisions: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Mode != "merge" || result.Revisions != 1 {
+		t.Fatalf("import result = %+v", result)
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].ID != "local-only" || pages[0].Title != "Local only" {
+		t.Fatalf("merge pages = %#v", pages)
+	}
+	var tombstonedTitle string
+	var tombstonedAlive int
+	if err := dst.DB().QueryRowContext(ctx, `select title, alive from pages where id = 'page1'`).Scan(&tombstonedTitle, &tombstonedAlive); err != nil {
+		t.Fatal(err)
+	}
+	if tombstonedAlive != 0 || tombstonedTitle != "Local deleted" {
+		t.Fatalf("local tombstone was overwritten: title=%q alive=%d", tombstonedTitle, tombstonedAlive)
+	}
+	var deletedAt int64
+	var deletionSource, deletionReason string
+	if err := dst.DB().QueryRowContext(ctx, `select deleted_at, deletion_source, deletion_reason
+		from record_sources where record_table = 'page' and record_id = 'page1' and source = 'test'`).Scan(
+		&deletedAt, &deletionSource, &deletionReason); err != nil {
+		t.Fatal(err)
+	}
+	if deletedAt != now+1 || deletionSource != "test" || deletionReason != "explicit-source-delete" {
+		t.Fatalf("tombstone metadata = %d %q %q", deletedAt, deletionSource, deletionReason)
+	}
+	var spaceName string
+	if err := dst.DB().QueryRowContext(ctx, `select name from spaces where id = 'space1'`).Scan(&spaceName); err != nil {
+		t.Fatal(err)
+	}
+	if spaceName != "Remote space" {
+		t.Fatalf("merged space name = %q", spaceName)
+	}
+	var mergedSpaceRowID int64
+	if err := dst.DB().QueryRowContext(ctx, `select rowid from spaces where id = 'space1'`).Scan(&mergedSpaceRowID); err != nil {
+		t.Fatal(err)
+	}
+	if mergedSpaceRowID != spaceRowID {
+		t.Fatalf("merge replaced stable space rowid: before=%d after=%d", spaceRowID, mergedSpaceRowID)
+	}
+	var revisionPayload string
+	if err := dst.DB().QueryRowContext(ctx, `select payload_json from record_revisions
+		where record_table = 'spaces' and reason = 'snapshot-merge'`).Scan(&revisionPayload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(revisionPayload, "Local space") {
+		t.Fatalf("revision payload = %s", revisionPayload)
+	}
+}
+
+func TestImportMergeAppliesIncomingTombstone(t *testing.T) {
+	ctx := context.Background()
+	src, err := store.Open(filepath.Join(t.TempDir(), "src.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	now := store.NowMS()
+	if err := src.UpsertPage(ctx, store.Page{ID: "page1", Title: "Remote deleted", Alive: true, Source: "api", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := src.UpsertPage(ctx, store.Page{ID: "page1", Title: "Remote deleted", Alive: false, Source: "api", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo}); err != nil {
+		t.Fatal(err)
+	}
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local live", Alive: true, Source: "api", SyncedAt: now - 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Import(ctx, dst, repo); err != nil {
+		t.Fatal(err)
+	}
+	var alive int
+	if err := dst.DB().QueryRowContext(ctx, `select alive from pages where id = 'page1'`).Scan(&alive); err != nil {
+		t.Fatal(err)
+	}
+	if alive != 0 {
+		t.Fatalf("incoming tombstone alive = %d", alive)
+	}
+	var reason string
+	if err := dst.DB().QueryRowContext(ctx, `select deletion_reason from record_sources
+		where record_table = 'page' and record_id = 'page1' and source = 'api'`).Scan(&reason); err != nil {
+		t.Fatal(err)
+	}
+	if reason != "explicit-source-delete" {
+		t.Fatalf("incoming deletion reason = %q", reason)
+	}
+}
+
+func TestImportMergePreservesHigherPriorityLocalPayloadAndRemoteFallback(t *testing.T) {
+	ctx := context.Background()
+	src, mdDir := snapshotStoreForTest(t, ctx, "Remote fallback", "remote body")
+	defer src.Close()
+	repo := t.TempDir()
+	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+		t.Fatal(err)
+	}
+	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	now := store.NowMS()
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local API", Alive: true, Source: "api", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ImportWithOptions(ctx, dst, repo, ImportOptions{RetainRevisions: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Revisions != 0 {
+		t.Fatalf("unchanged canonical payload produced revisions: %+v", result)
+	}
+	pages, err := dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].Title != "Local API" || pages[0].Source != "api" {
+		t.Fatalf("merged canonical page = %#v", pages)
+	}
+	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Deleted API", Alive: false, Source: "api", SyncedAt: now + 1}); err != nil {
+		t.Fatal(err)
+	}
+	pages, err = dst.Pages(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pages) != 1 || pages[0].Title != "Remote fallback" || pages[0].Source != "test" {
+		t.Fatalf("promoted imported fallback = %#v", pages)
 	}
 }
 
