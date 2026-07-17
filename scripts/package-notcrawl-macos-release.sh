@@ -31,6 +31,10 @@ usage() {
   echo "notcrawl releases require $EXPECTED_AUTHORITY" >&2
   exit 1
 }
+[[ -n "${NOTARYTOOL_KEYCHAIN_PROFILE:-}" ]] || {
+  echo "NOTARYTOOL_KEYCHAIN_PROFILE is required for notcrawl release notarization" >&2
+  exit 1
+}
 
 for tool in arch codesign git go lipo shasum tar; do
   command -v "$tool" >/dev/null || {
@@ -101,6 +105,8 @@ for arch in arm64 amd64; do
   else
     [[ "$("$binary" --version)" == "$VERSION" ]]
   fi
+
+  "$ROOT/scripts/notarize-notcrawl-macos.sh" "$binary"
 
   for file in README.md LICENSE SPEC.md config.example.toml; do
     cp "$ROOT/$file" "$stage/$file"
