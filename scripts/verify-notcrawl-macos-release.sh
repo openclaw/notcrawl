@@ -85,6 +85,7 @@ for archive in "$@"; do
   [[ -x "$binary" ]]
 
   codesign --verify --strict -R="$REQUIREMENT" --verbose=2 "$binary"
+  codesign --verify --strict --check-notarization -R=notarized --verbose=2 "$binary"
   signature=$(codesign -dvvv "$binary" 2>&1)
   grep -Fx "Identifier=$IDENTIFIER" <<<"$signature" >/dev/null
   grep -Fx "TeamIdentifier=$EXPECTED_TEAM_ID" <<<"$signature" >/dev/null

@@ -1,12 +1,15 @@
 BINARY ?= bin/notcrawl
 
-.PHONY: build test run fmt release-notes release-snapshot release-check release-artifacts release-macos verify-release-macos
+.PHONY: build test test-release run fmt release-notes release-snapshot release-check release-artifacts release-macos verify-release-macos
 
 build:
 	go build -o $(BINARY) ./cmd/notcrawl
 
 test:
 	go test ./...
+
+test-release:
+	./scripts/test-notcrawl-macos-release.sh
 
 run:
 	go run ./cmd/notcrawl $(ARGS)
