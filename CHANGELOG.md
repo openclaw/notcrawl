@@ -1,11 +1,25 @@
 # Changelog
 
-## 0.5.4 - Unreleased
+## 0.5.4 - 2026-07-17
 
-### Tooling
+### Highlights
 
+- Make git-share imports non-destructive by default, preserving local-only rows and tombstones while reserving exact replacement for explicit `--restore` mode.
 - Notarize both official macOS binaries and require Apple notarization verification before release publication.
-- Merge git-share imports without pruning local rows or tombstones, with explicit `--restore` replacement and optional `--retain-revisions` history.
+
+### Sharing and retention
+
+- Preserve stable row identity and mixed-source fallback payloads during share merges, with optional overwritten-payload history through `--retain-revisions`.
+- Record deletion time, source, and reason for explicit deletes, authoritative enumeration, and parent-delete events.
+
+### Dependencies
+
+- Update CrawlKit to v0.14.3.
+
+### Release infrastructure
+
+- Fail closed without an approved runtime notarization profile and verify both submissions again when validating release archives.
+- Add credential-free macOS release-script regressions to hosted CI.
 
 ## 0.5.3 - 2026-07-17
 
