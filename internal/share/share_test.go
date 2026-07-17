@@ -293,6 +293,9 @@ func TestImportMergePreservesLocalRowsAndTombstonesWithOptionalRevisions(t *test
 	if err := dst.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Local space", RawJSON: `{"name":"local"}`, Source: "desktop", SyncedAt: now}); err != nil {
 		t.Fatal(err)
 	}
+	if err := dst.UpsertSpace(ctx, store.Space{ID: "rowid-sentinel", Name: "Sentinel", Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local deleted", Alive: true, Source: "test", SyncedAt: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -300,6 +303,10 @@ func TestImportMergePreservesLocalRowsAndTombstonesWithOptionalRevisions(t *test
 		t.Fatal(err)
 	}
 	if err := dst.UpsertPage(ctx, store.Page{ID: "local-only", Title: "Local only", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var spaceRowID int64
+	if err := dst.DB().QueryRowContext(ctx, `select rowid from spaces where id = 'space1'`).Scan(&spaceRowID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -341,6 +348,13 @@ func TestImportMergePreservesLocalRowsAndTombstonesWithOptionalRevisions(t *test
 	}
 	if spaceName != "Remote space" {
 		t.Fatalf("merged space name = %q", spaceName)
+	}
+	var mergedSpaceRowID int64
+	if err := dst.DB().QueryRowContext(ctx, `select rowid from spaces where id = 'space1'`).Scan(&mergedSpaceRowID); err != nil {
+		t.Fatal(err)
+	}
+	if mergedSpaceRowID != spaceRowID {
+		t.Fatalf("merge replaced stable space rowid: before=%d after=%d", spaceRowID, mergedSpaceRowID)
 	}
 	var revisionPayload string
 	if err := dst.DB().QueryRowContext(ctx, `select payload_json from record_revisions
