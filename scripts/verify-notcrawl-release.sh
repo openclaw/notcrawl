@@ -15,6 +15,7 @@ BASE_VERSION=${VERSION%%-*}
 BASE_VERSION_RE=${BASE_VERSION//./\\.}
 ASSET_DIR=$(cd "$ASSET_DIR" && pwd)
 EXPECTED_GLOBAL=$'notcrawl_'"${VERSION}"$'_darwin_amd64.tar.gz\nnotcrawl_'"${VERSION}"$'_darwin_arm64.tar.gz\nnotcrawl_'"${VERSION}"$'_linux_amd64.tar.gz\nnotcrawl_'"${VERSION}"$'_linux_arm64.tar.gz'
+EXPECTED_CONTROLS=$'ASSET-INVENTORY.json\nRELEASE-NOTES.md\nSIGNING-MANIFEST.json'
 EXPECTED_COMMIT=$(git -C "$ROOT" rev-parse "refs/tags/$TAG^{commit}" 2>/dev/null) || {
   echo "release tag does not exist locally: $TAG" >&2
   exit 1
@@ -27,33 +28,9 @@ for tool in bsdtar git go tar; do
   }
 done
 
-verify_checksum_record() {
-  local archive_path=$1 checksum_path=$2 expected_hash expected_name extra actual_hash
-  [[ "$(wc -l < "$checksum_path" | tr -d ' ')" == 1 ]] || {
-    echo "invalid checksum file: $checksum_path" >&2
-    return 1
-  }
-  read -r expected_hash expected_name extra < "$checksum_path"
-  [[ "$expected_hash" =~ ^[[:xdigit:]]{64}$ && "$expected_name" == "$(basename "$archive_path")" && -z "${extra:-}" ]] || {
-    echo "invalid checksum record: $checksum_path" >&2
-    return 1
-  }
-  if command -v sha256sum >/dev/null; then
-    actual_hash=$(sha256sum "$archive_path" | awk '{print $1}')
-  else
-    actual_hash=$(shasum -a 256 "$archive_path" | awk '{print $1}')
-  fi
-  [[ "$actual_hash" == "$expected_hash" ]] || {
-    echo "checksum mismatch: $archive_path" >&2
-    return 1
-  }
-}
-
 for path in \
   "$ASSET_DIR/notcrawl_${VERSION}_darwin_amd64.tar.gz" \
-  "$ASSET_DIR/notcrawl_${VERSION}_darwin_amd64.tar.gz.sha256" \
   "$ASSET_DIR/notcrawl_${VERSION}_darwin_arm64.tar.gz" \
-  "$ASSET_DIR/notcrawl_${VERSION}_darwin_arm64.tar.gz.sha256" \
   "$ASSET_DIR/notcrawl_${VERSION}_linux_amd64.tar.gz" \
   "$ASSET_DIR/notcrawl_${VERSION}_linux_arm64.tar.gz" \
   "$ASSET_DIR/sha256sums.txt"; do
@@ -78,6 +55,7 @@ global_names="$(
   awk '{ name=$2; sub(/^\*/, "", name); print name }' "$ASSET_DIR/sha256sums.txt" | LC_ALL=C sort
 )"
 expected_names="$(printf '%s\n%s\n' "$EXPECTED_GLOBAL" "$package_names" | LC_ALL=C sort)"
+expected_names="$(printf '%s\n%s\n' "$expected_names" "$EXPECTED_CONTROLS" | LC_ALL=C sort)"
 [[ "$global_names" == "$expected_names" ]] || {
   echo "aggregate checksum manifest does not match release assets" >&2
   exit 1
@@ -86,15 +64,13 @@ expected_names="$(printf '%s\n%s\n' "$EXPECTED_GLOBAL" "$package_names" | LC_ALL
 expected_all_names="$(
   printf '%s\n' \
     "$expected_names" \
-    "notcrawl_${VERSION}_darwin_amd64.tar.gz.sha256" \
-    "notcrawl_${VERSION}_darwin_arm64.tar.gz.sha256" \
     'sha256sums.txt' | LC_ALL=C sort
 )"
 actual_names="$(
   find "$ASSET_DIR" -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort
 )"
 [[ "$actual_names" == "$expected_all_names" ]] || {
-  echo "release directory does not contain the exact 11-asset manifest" >&2
+  echo "release directory does not contain the exact 12-asset manifest" >&2
   diff <(printf '%s\n' "$expected_all_names") <(printf '%s\n' "$actual_names") >&2 || true
   exit 1
 }
@@ -107,12 +83,6 @@ actual_names="$(
     shasum -a 256 -c sha256sums.txt
   fi
 )
-verify_checksum_record \
-  "$ASSET_DIR/notcrawl_${VERSION}_darwin_amd64.tar.gz" \
-  "$ASSET_DIR/notcrawl_${VERSION}_darwin_amd64.tar.gz.sha256"
-verify_checksum_record \
-  "$ASSET_DIR/notcrawl_${VERSION}_darwin_arm64.tar.gz" \
-  "$ASSET_DIR/notcrawl_${VERSION}_darwin_arm64.tar.gz.sha256"
 
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/notcrawl-linux-verify.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -129,7 +99,7 @@ verify_go_provenance() {
   grep -F $'\tbuild\tGOARCH='"$expected_arch" <<<"$build_info" >/dev/null
 }
 
-EXPECTED_LINUX_MEMBERS=$'LICENSE\nREADME.md\nSPEC.md\nconfig.example.toml\nnotcrawl'
+EXPECTED_LINUX_MEMBERS=$'CHANGELOG.md\nLICENSE\nREADME.md\nSPEC.md\nconfig.example.toml\nnotcrawl'
 for arch in amd64 arm64; do
   archive="$ASSET_DIR/notcrawl_${VERSION}_linux_${arch}.tar.gz"
   stage="$WORK_DIR/archive-$arch"

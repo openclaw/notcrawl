@@ -1,128 +1,99 @@
 # Distribution
 
-`notcrawl` ships through GitHub Releases, Homebrew tap updates, and optional
-Cloudsmith APT/RPM repositories.
+`notcrawl` ships through GitHub Releases and the `openclaw/homebrew-tap`
+formula. The only official publication path is
+`.github/workflows/release-unified.yml`, which delegates to the shared OpenClaw
+Go CLI release pipeline.
 
-Official macOS archives are signed with hardened runtime and identifier
-`org.openclaw.notcrawl`, then notarized by the OpenClaw Foundation Apple
-Developer Team `FWJYW4S8P8`. Ordinary builds and GoReleaser snapshots do not
-need signing credentials. The official publish path is local to an authorized
-maintainer Mac and fails closed unless both architecture archives pass signing
-and notarization verification.
+Official macOS archives are signed with hardened runtime and stable identifier
+`org.openclaw.notcrawl`, then notarized by Apple. Ordinary local builds and
+GoReleaser snapshots remain credential-free.
 
 ## Local Checks
+
+Run the complete local gate before preparing a release:
 
 ```bash
 make check
 ```
 
-Also smoke the crawlkit control and non-interactive TUI surfaces before a tag:
-
-```bash
-notcrawl metadata --json
-notcrawl status --json
-notcrawl doctor --json
-notcrawl check-update --json
-notcrawl tui --json --limit 10
-```
-
-The CI workflow runs the same control-surface smoke checks, plus dependency
-verification, `gofmt`, `go vet`, tests, a GoReleaser snapshot build, and
-CodeQL. Snapshot macOS binaries are development artifacts and are not eligible
-for publication.
-
-For a credential-free development build of the release artifacts:
+The gate covers dependency verification, formatting, vet, dead-code analysis,
+tests, control-surface smoke tests, release configuration validation, and both
+GoReleaser snapshot configurations. Snapshot targets remain local diagnostics
+and never publish:
 
 ```bash
 make snapshot
+make snapshot-release
 ```
 
-That creates local snapshot archives, checksums, `.deb`, and `.rpm` packages
-under `dist/` without publishing.
+`make release`, `make release-artifacts`, and `make release-macos` deliberately
+refuse local publication and print the official workflow command.
 
-## Release Notes
+## Official Release
 
-GitHub uses Release Drafter to auto-label PRs and maintain draft release notes
-from merged pull requests. The maintainer verifies those notes against the
-changelog before locally publishing the prepared assets.
-
-## Tagged Release
-
-Prepare the changelog and create a signed semver tag. From a clean Apple Silicon
-checkout at that exact tag, build all official assets through the managed local
-signing path:
+Stamp the changelog section with the release date, merge it to protected
+`main`, and create and push an annotated SSH-signed tag. The signer must appear
+in `.github/release-allowed-signers`.
 
 ```bash
-git tag -s v0.1.0 -m "notcrawl v0.1.0"
-make release TAG=v0.1.0
+git tag -s v0.5.5 -m "notcrawl v0.5.5"
+git push origin v0.5.5
+gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.5.5
 ```
 
-`make release` is the official local release path. It builds Linux archives
-and packages without credentials, then uses
-`release-mac-app codesign-run` to build, sign, and notarize the two thin macOS
-archives. The step requires Rosetta so both architectures can execute. It
-rejects a dirty or mismatched checkout, an invalid tag signature, a missing
-managed identity or notarization profile, the wrong Team ID or identifier, a
-rejected notarization submission, stale build provenance, incomplete archive
-contents, and checksum/asset-set mismatches. Set
-`NOTARYTOOL_KEYCHAIN_PROFILE` to an approved login-keychain profile at runtime;
-never place notarization credentials in the repository. Private signing
-keychain routing belongs in the ignored `.mac-release.env` or another approved
-runtime environment.
+The workflow freezes the protected source revision, verifies independent CI,
+builds the GoReleaser matrix and nFPM packages, signs and notarizes both macOS
+architectures, verifies the complete draft independently on Intel and Apple
+Silicon, publishes the GitHub release, and verifies the Homebrew handoff.
 
-After inspecting the exact 11-file manifest in `dist/release-assets/`, push
-`main` and the tag, attach those files to the Release Drafter draft, verify its
-notes contain the changelog, then publish it locally. The local preparation
-step is the pre-publication gate: it verifies the exact manifest, checksums,
-binary provenance, both Developer ID signatures, hardened runtime, and Apple
-notarization tickets before any upload. CI never imports the Developer ID
-private key or notarization credentials and never publishes release assets.
+The published `v0.5.4` contract contained six Linux assets: two archives, two
+Debian packages, and two RPM packages. The unified workflow preserves all six
+names and adds two signed and notarized macOS archives, the aggregate
+`sha256sums.txt` manifest, and three release-verification controls. Universal
+Darwin packaging is disabled, so the official twelve-asset set is:
 
-To re-check an already-built official artifact set without rebuilding it:
+```text
+notcrawl_VERSION_linux_amd64.tar.gz
+notcrawl_VERSION_linux_arm64.tar.gz
+notcrawl_VERSION_amd64.deb
+notcrawl_VERSION_arm64.deb
+notcrawl-VERSION-1.x86_64.rpm
+notcrawl-VERSION-1.aarch64.rpm
+notcrawl_VERSION_darwin_amd64.tar.gz
+notcrawl_VERSION_darwin_arm64.tar.gz
+sha256sums.txt
+ASSET-INVENTORY.json
+RELEASE-NOTES.md
+SIGNING-MANIFEST.json
+```
+
+Every archive includes `notcrawl`, `CHANGELOG.md`, `LICENSE`, `README.md`,
+`SPEC.md`, and `config.example.toml`. The inventory binds each payload to its
+size and SHA-256 digest, the signing manifest records the verified macOS
+identity and notarization policy, and the frozen release notes are the exact
+text published on the release. The Debian and RPM packages remain attached
+directly to the GitHub release.
+
+## Diagnostics
+
+Download a published release into `dist/release-assets/`, fetch its tag, then
+verify the exact manifest, aggregate checksums, Linux package provenance, and
+macOS signatures from a Mac:
 
 ```bash
-make verify-release TAG=v0.1.0
+make verify-release TAG=v0.5.5
 ```
 
-The previous `release-snapshot` and `release-artifacts` target names remain as
-aliases for automation compatibility.
-
-The read-only `Release Validation` workflow runs after publication using
-verifier code from the trusted default branch. It checks the exact asset
-manifest and checksums, tests the tagged source, verifies every Linux
-archive/package binary embeds the tag commit, and verifies each macOS binary
-natively against the Apple trust chain, Team ID, identifier, version,
-architecture, embedded tag commit, and notarization ticket. The Homebrew
-workflow then updates the tap; Cloudsmith publication remains an explicit
-follow-up.
+`make verify-release-macos TAG=v0.5.5` verifies already-downloaded macOS
+archives in `dist/`. These targets are read-only diagnostics; they never upload
+or alter a release.
 
 ## Required Secrets
 
-- `HOMEBREW_TAP_GITHUB_TOKEN`: token that can push to the tap repository
-- `CLOUDSMITH_API_KEY`: optional; enables package publishing
-
-The Apple Developer private key is never a GitHub Actions secret. It is used
-only by the managed local signing helper during official release preparation.
-
-## Optional Variables
-
-- `HOMEBREW_TAP_REPO`: defaults to `openclaw/tap`
-- `CLOUDSMITH_APT_TARGETS`: comma-separated targets like `ubuntu/jammy,debian/trixie`
-- `CLOUDSMITH_DISTRIBUTION` and `CLOUDSMITH_RELEASE`: legacy single APT target
-- `CLOUDSMITH_RPM_DISTRIBUTION`: defaults to `el`
-- `CLOUDSMITH_RPM_RELEASE`: defaults to `9`
-
-## Manual Reruns
-
-If Cloudsmith publish fails after GitHub release assets exist:
-
-```bash
-gh workflow run publish-apt.yml -f tag_name=v0.1.0
-gh workflow run publish-rpm.yml -f tag_name=v0.1.0
-```
-
-If the Homebrew tap update fails:
-
-```bash
-gh workflow run homebrew-tap.yml -f tag_name=v0.1.0
-```
+- `MACOS_SIGNING_P12`
+- `MACOS_SIGNING_P12_PASSWORD`
+- `ASC_KEY_ID`
+- `ASC_ISSUER_ID`
+- `ASC_PRIVATE_KEY_P8`
+- `HOMEBREW_TAP_GITHUB_TOKEN`, mapped to the shared workflow's `TAP_TOKEN`

@@ -87,16 +87,13 @@ snapshot-release: ## Test the credential-free official Linux release configurati
 
 release-snapshot: snapshot ## Alias for snapshot.
 
-release: ## Build and verify official release artifacts for TAG=vX.Y.Z.
-	@test -n "$(TAG)" || (echo "usage: make release TAG=v0.1.0" >&2; exit 2)
-	./scripts/prepare-notcrawl-release.sh "$(TAG)"
+release: ## Refuse local publication and print the official workflow command.
+	@echo "local release publication is disabled; run: gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=X.Y.Z" >&2
+	@exit 1
 
 release-artifacts: release ## Alias for release.
 
-release-macos: ## Build signed and notarized macOS artifacts for TAG=vX.Y.Z.
-	@test -n "$(TAG)" || (echo "usage: make release-macos TAG=v0.1.0" >&2; exit 2)
-	@helper="$${MAC_RELEASE_HELPER:-$$HOME/Projects/agent-scripts/skills/release-mac-app/scripts/mac-release}"; \
-	"$$helper" codesign-run -- ./scripts/package-notcrawl-macos-release.sh "$(TAG)"
+release-macos: release ## Alias for the disabled local release path.
 
 verify-release: ## Verify the complete official release artifact set for TAG=vX.Y.Z.
 	@test -n "$(TAG)" || (echo "usage: make verify-release TAG=v0.1.0 [ASSET_DIR=path]" >&2; exit 2)

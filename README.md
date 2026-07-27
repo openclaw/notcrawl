@@ -136,8 +136,9 @@ local/remote footer.
 
 ## Distribution
 
-Release packaging is managed with GoReleaser. Tagged releases build tarballs,
-checksums, `.deb`, `.rpm`, GitHub release notes, and a Homebrew tap update.
+Release packaging runs through the shared OpenClaw GitHub Actions workflow.
+Tagged releases publish signed and notarized macOS archives, checksums, `.deb`
+and `.rpm` packages, GitHub release notes, and a verified Homebrew tap update.
 
 See [`docs/distribution.md`](docs/distribution.md) for release operations.
 
