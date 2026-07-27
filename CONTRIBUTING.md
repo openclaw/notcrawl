@@ -6,9 +6,12 @@ content out of git.
 Useful local checks:
 
 ```bash
-go test ./...
-go build ./cmd/notcrawl
+make check
 ```
+
+Run `make help` to see the credential-free snapshot and other repository
+targets. The official release path is `make release TAG=vX.Y.Z`; it builds and
+verifies the complete artifact set before anything can be uploaded.
 
 Implementation notes:
 

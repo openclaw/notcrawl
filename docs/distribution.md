@@ -13,8 +13,7 @@ and notarization verification.
 ## Local Checks
 
 ```bash
-go test ./...
-go build ./cmd/notcrawl
+make check
 ```
 
 Also smoke the crawlkit control and non-interactive TUI surfaces before a tag:
@@ -32,10 +31,10 @@ verification, `gofmt`, `go vet`, tests, a GoReleaser snapshot build, and
 CodeQL. Snapshot macOS binaries are development artifacts and are not eligible
 for publication.
 
-If GoReleaser is installed:
+For a credential-free development build of the release artifacts:
 
 ```bash
-make release-snapshot
+make snapshot
 ```
 
 That creates local snapshot archives, checksums, `.deb`, and `.rpm` packages
@@ -55,10 +54,11 @@ signing path:
 
 ```bash
 git tag -s v0.1.0 -m "notcrawl v0.1.0"
-make release-artifacts TAG=v0.1.0
+make release TAG=v0.1.0
 ```
 
-This builds Linux archives and packages without credentials, then uses
+`make release` is the official local release path. It builds Linux archives
+and packages without credentials, then uses
 `release-mac-app codesign-run` to build, sign, and notarize the two thin macOS
 archives. The step requires Rosetta so both architectures can execute. It
 rejects a dirty or mismatched checkout, an invalid tag signature, a missing
@@ -77,6 +77,15 @@ step is the pre-publication gate: it verifies the exact manifest, checksums,
 binary provenance, both Developer ID signatures, hardened runtime, and Apple
 notarization tickets before any upload. CI never imports the Developer ID
 private key or notarization credentials and never publishes release assets.
+
+To re-check an already-built official artifact set without rebuilding it:
+
+```bash
+make verify-release TAG=v0.1.0
+```
+
+The previous `release-snapshot` and `release-artifacts` target names remain as
+aliases for automation compatibility.
 
 The read-only `Release Validation` workflow runs after publication using
 verifier code from the trusted default branch. It checks the exact asset

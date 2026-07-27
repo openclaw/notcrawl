@@ -6,6 +6,10 @@
 
 - Update terminal and text support dependencies, including `go-isatty` v0.0.24, `go-runewidth` v0.0.27, and `x/text` v0.40.0.
 
+### Tooling
+
+- Standardize the maintainer Make targets and keep the official local release path fail-closed on signing and notarization verification.
+
 ## 0.5.4 - 2026-07-17
 
 ### Highlights
