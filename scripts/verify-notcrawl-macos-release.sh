@@ -50,7 +50,7 @@ for archive in "$@"; do
       ;;
   esac
 
-  members=$(tar -tzf "$archive" | LC_ALL=C sort)
+  members=$(tar -tzf "$archive" | sed 's#^\./##' | sed '/^$/d' | LC_ALL=C sort)
   [[ "$members" == "$EXPECTED_MEMBERS" ]] || {
     echo "unexpected archive contents in $(basename "$archive")" >&2
     printf '%s\n' "$members" >&2
