@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.6 - Unreleased
+
+### Tooling
+
+- Accept the shared release pipeline's normalized archive member paths in local release verification.
+
 ## 0.5.5 - 2026-07-26
 
 ### Dependencies

@@ -103,13 +103,13 @@ EXPECTED_LINUX_MEMBERS=$'CHANGELOG.md\nLICENSE\nREADME.md\nSPEC.md\nconfig.examp
 for arch in amd64 arm64; do
   archive="$ASSET_DIR/notcrawl_${VERSION}_linux_${arch}.tar.gz"
   stage="$WORK_DIR/archive-$arch"
-  members=$(tar -tzf "$archive" | LC_ALL=C sort)
+  members=$(tar -tzf "$archive" | sed 's#^\./##' | sed '/^$/d' | LC_ALL=C sort)
   [[ "$members" == "$EXPECTED_LINUX_MEMBERS" ]] || {
     echo "unexpected archive contents in $(basename "$archive")" >&2
     exit 1
   }
   mkdir -p "$stage"
-  tar -xzf "$archive" -C "$stage" notcrawl
+  tar -xzf "$archive" -C "$stage"
   verify_go_provenance "$stage/notcrawl" "$arch"
 done
 
