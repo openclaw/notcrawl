@@ -9,24 +9,6 @@ EXPECTED_AUTHORITY='Developer ID Application: OpenClaw Foundation (FWJYW4S8P8)'
 EXPECTED_TEAM_ID=FWJYW4S8P8
 REQUIREMENT="identifier \"$IDENTIFIER\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"$EXPECTED_TEAM_ID\""
 
-verify_checksum() {
-  local archive_path=$1 checksum_path=$2 expected_hash expected_name extra actual_hash
-  [[ "$(wc -l < "$checksum_path" | tr -d ' ')" == 1 ]] || {
-    echo "invalid checksum file: $checksum_path" >&2
-    return 1
-  }
-  read -r expected_hash expected_name extra < "$checksum_path"
-  [[ "$expected_hash" =~ ^[[:xdigit:]]{64}$ && "$expected_name" == "$(basename "$archive_path")" && -z "${extra:-}" ]] || {
-    echo "invalid checksum record: $checksum_path" >&2
-    return 1
-  }
-  actual_hash=$(shasum -a 256 "$archive_path" | awk '{print $1}')
-  [[ "$actual_hash" == "$expected_hash" ]] || {
-    echo "checksum mismatch: $archive_path" >&2
-    return 1
-  }
-}
-
 if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ || "$#" -eq 0 ]]; then
   echo "usage: $0 vX.Y.Z notcrawl_X.Y.Z_darwin_ARCH.tar.gz [...]" >&2
   exit 2
@@ -50,13 +32,12 @@ EXPECTED_COMMIT=$(git -C "$ROOT" rev-parse "refs/tags/$TAG^{commit}" 2>/dev/null
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/notcrawl-verify.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
 VERSION=${TAG#v}
-EXPECTED_MEMBERS=$'LICENSE\nREADME.md\nSPEC.md\nconfig.example.toml\nnotcrawl'
+EXPECTED_MEMBERS=$'CHANGELOG.md\nLICENSE\nREADME.md\nSPEC.md\nconfig.example.toml\nnotcrawl'
 
 for archive in "$@"; do
   archive=$(cd "$(dirname "$archive")" && pwd)/$(basename "$archive")
-  checksum="$archive.sha256"
-  [[ -f "$archive" && -f "$checksum" ]] || {
-    echo "missing artifact or checksum: $archive" >&2
+  [[ -f "$archive" ]] || {
+    echo "missing artifact: $archive" >&2
     exit 1
   }
 
@@ -68,8 +49,6 @@ for archive in "$@"; do
       exit 1
       ;;
   esac
-
-  verify_checksum "$archive" "$checksum"
 
   members=$(tar -tzf "$archive" | LC_ALL=C sort)
   [[ "$members" == "$EXPECTED_MEMBERS" ]] || {

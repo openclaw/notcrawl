@@ -9,6 +9,7 @@
 ### Tooling
 
 - Standardize the maintainer Make targets and keep the official local release path fail-closed on signing and notarization verification.
+- Move releases to the shared OpenClaw CI pipeline, including signed and notarized macOS archives, GitHub-hosted Linux packages, and verified Homebrew handoff.
 
 ## 0.5.4 - 2026-07-17
 
