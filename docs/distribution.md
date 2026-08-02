@@ -33,19 +33,17 @@ refuse local publication and print the official workflow command.
 ## Official Release
 
 Stamp the changelog section with the release date, merge it to protected
-`main`, and create and push an annotated SSH-signed tag. The signer must appear
-in `.github/release-allowed-signers`.
+`main`, then dispatch the unified workflow:
 
 ```bash
-git tag -s v0.5.5 -m "notcrawl v0.5.5"
-git push origin v0.5.5
 gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.5.5
 ```
 
-The workflow freezes the protected source revision, verifies independent CI,
-builds the GoReleaser matrix and nFPM packages, signs and notarizes both macOS
-architectures, verifies the complete draft independently on Intel and Apple
-Silicon, publishes the GitHub release, and verifies the Homebrew handoff.
+The workflow freezes the protected source revision, creates the immutable
+annotated tag, verifies independent CI, builds the GoReleaser matrix and nFPM
+packages, signs and notarizes both macOS architectures, verifies the complete
+draft independently on Intel and Apple Silicon, publishes the GitHub release,
+and verifies the Homebrew handoff.
 
 The published `v0.5.4` contract contained six Linux assets: two archives, two
 Debian packages, and two RPM packages. The unified workflow preserves all six
@@ -89,11 +87,14 @@ make verify-release TAG=v0.5.5
 archives in `dist/`. These targets are read-only diagnostics; they never upload
 or alter a release.
 
-## Required Secrets
+## Organization Secrets
+
+The workflow receives release credentials from GitHub organization secrets;
+release operators never load them locally:
 
 - `MACOS_SIGNING_P12`
 - `MACOS_SIGNING_P12_PASSWORD`
 - `ASC_KEY_ID`
 - `ASC_ISSUER_ID`
 - `ASC_PRIVATE_KEY_P8`
-- `HOMEBREW_TAP_GITHUB_TOKEN`, mapped to the shared workflow's `TAP_TOKEN`
+- `HOMEBREW_TAP_TOKEN`, mapped to the shared workflow's `TAP_TOKEN`
