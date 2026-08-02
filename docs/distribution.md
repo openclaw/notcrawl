@@ -97,4 +97,4 @@ release operators never load them locally:
 - `ASC_KEY_ID`
 - `ASC_ISSUER_ID`
 - `ASC_PRIVATE_KEY_P8`
-- `HOMEBREW_TAP_TOKEN`, mapped to the shared workflow's `TAP_TOKEN`
+- `HOMEBREW_TAP_GITHUB_TOKEN`, mapped to the shared workflow's `TAP_TOKEN`
