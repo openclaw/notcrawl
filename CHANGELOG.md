@@ -2,6 +2,10 @@
 
 ## 0.5.6 - Unreleased
 
+### Dependencies
+
+- Update CrawlKit to v0.14.4, modernc.org/sqlite to v1.55.0, and refresh the TruffleHog GitHub Action with an immutable version pin.
+
 ### Tooling
 
 - Accept the shared release pipeline's normalized archive member paths in local release verification.
