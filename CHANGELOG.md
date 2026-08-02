@@ -4,7 +4,7 @@
 
 ### Dependencies
 
-- Update CrawlKit to v0.14.4, modernc.org/sqlite to v1.55.0, and refresh the stale and TruffleHog GitHub Actions with immutable version pins.
+- Update CrawlKit to v0.14.4, modernc.org/sqlite to v1.55.0, and refresh the TruffleHog GitHub Action with an immutable version pin.
 
 ### Tooling
 
