@@ -26,9 +26,8 @@ jobs:
       homebrew-formula: notcrawl
       archive-files: '["CHANGELOG.md","LICENSE","README.md","SPEC.md","config.example.toml"]'
       checksum-filename: sha256sums.txt
-      nfpm: enabled
+      nfpm: auto
       stable-identifier: org.openclaw.notcrawl
-      require-signed-tag: true
       darwin-universal: disabled
       ci-check-events: '["push","pull_request"]'
     secrets:
@@ -37,4 +36,4 @@ jobs:
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
       ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
-      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.6 - 2026-08-01
+## 0.5.6 - 2026-08-02
 
 ### Dependencies
 
@@ -8,6 +8,7 @@
 
 ### Tooling
 
+- Let the unified release workflow create the immutable release tag and consume organization-managed signing, notarization, and Homebrew credentials without local secret access.
 - Accept the shared release pipeline's normalized archive member paths in local release verification.
 
 ## 0.5.5 - 2026-07-26
