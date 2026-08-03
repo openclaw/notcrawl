@@ -28,6 +28,14 @@ func defaultHTTPClient() *http.Client {
 	return &http.Client{Timeout: defaultHTTPTimeout}
 }
 
+// httpClientOrDefault returns the injected client, or a 60s default when nil.
+func httpClientOrDefault(c *http.Client) *http.Client {
+	if c == nil {
+		return defaultHTTPClient()
+	}
+	return c
+}
+
 type Client struct {
 	BaseURL string
 	Version string
@@ -55,9 +63,7 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 	if c.Version == "" {
 		c.Version = "2026-03-11"
 	}
-	if c.HTTP == nil {
-		c.HTTP = defaultHTTPClient()
-	}
+	c.HTTP = httpClientOrDefault(c.HTTP)
 	var s Summary
 	if err := st.DeferPageFTS(ctx, func() error {
 		users, err := c.listUsers(ctx)

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/notcrawl/internal/store"
 )
@@ -1004,18 +1005,40 @@ func TestDefaultHTTPClientBoundsOverallTimeout(t *testing.T) {
 }
 
 func TestSyncUsesDefaultHTTPClientWhenHTTPNil(t *testing.T) {
-	// Exercise the nil-HTTP branch without performing a full sync: Sync
-	// returns early on missing token before Do, but still installs the client.
-	// We verify the helper used by that branch instead of hitting Notion.
-	c := Client{Token: "secret"}
+	// Shared selector used by Sync on the nil-HTTP branch.
+	if got := httpClientOrDefault(nil); got.Timeout != defaultHTTPTimeout {
+		t.Fatalf("nil client timeout = %s, want %s", got.Timeout, defaultHTTPTimeout)
+	}
+	custom := &http.Client{Timeout: 5 * time.Second}
+	if got := httpClientOrDefault(custom); got != custom {
+		t.Fatal("injected client must be preserved")
+	}
+
+	// Call production Sync with HTTP left nil (value receiver installs default on the copy).
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/users":
+			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
+		case "/search":
+			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
+		default:
+			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
+		}
+	}))
+	defer server.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	c := Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret"} // HTTP nil
 	if c.HTTP != nil {
-		t.Fatal("expected nil HTTP before Sync setup")
+		t.Fatal("expected nil HTTP before Sync")
 	}
-	// Mirror Sync's nil guard
-	if c.HTTP == nil {
-		c.HTTP = defaultHTTPClient()
-	}
-	if c.HTTP.Timeout != defaultHTTPTimeout {
-		t.Fatalf("Sync default HTTP timeout = %s, want %s", c.HTTP.Timeout, defaultHTTPTimeout)
+	if _, err := c.Sync(context.Background(), st); err != nil {
+		t.Fatalf("Sync with nil HTTP: %v", err)
 	}
 }
