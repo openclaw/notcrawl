@@ -1,164 +1,148 @@
+# notcrawl 🗞️ — Your Notion memory, on disk
+
+[![CI](https://img.shields.io/github/actions/workflow/status/openclaw/notcrawl/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/openclaw/notcrawl/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/openclaw/notcrawl?style=flat-square)](https://github.com/openclaw/notcrawl/releases/latest)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/openclaw/notcrawl/releases/latest)
+[![License](https://img.shields.io/github/license/openclaw/notcrawl?style=flat-square)](LICENSE)
+[![Homebrew](https://img.shields.io/badge/Homebrew-openclaw%2Ftap-orange?style=flat-square&logo=homebrew)](https://github.com/openclaw/homebrew-tap/blob/main/Formula/notcrawl.rb)
+
 <img src="docs/notcrawl_banner.jpg" alt="notcrawl banner"/>
 
-# 🗞️ notcrawl
+`notcrawl` mirrors a Notion workspace into local SQLite and normalized Markdown. It is for people and agents that need to search, query, diff, or share workspace history without depending on the Notion UI.
 
-`notcrawl` mirrors Notion workspace data into local SQLite and normalized
-Markdown so you can search, query, diff, and share your Notion memory without
-depending on the Notion UI.
-
-It has three ingestion paths:
-
-- `desktop`: read-only snapshots of the local Notion desktop cache
-- `api`: official Notion API sync with rate-limit aware crawling
-- `notion-mcp`: targeted repair through a preconfigured Codex Notion connector
-
-SQLite is the canonical archive. Markdown is the durable human/agent surface.
-Git share mode publishes normalized snapshots that other machines can subscribe
-to without holding Notion credentials.
-
-## Current Scope
-
-- local SQLite storage with FTS5
-- read-only local desktop cache ingestion from macOS Notion
-- official API page/block/user/comment ingestion
-- Notion database metadata and row ingestion through the official API
-- current Notion data-source API support plus legacy database endpoint support
-- normalized Markdown export organized by Unicode-safe workspace, teamspace, and page paths
-- CSV/TSV export for crawled Notion database rows
-- compressed JSONL git-share snapshots plus import/update workflows
-- terminal archive browser for quick local page/database inspection
-- archive status, activity reporting, and SQLite maintenance commands
-- read-only SQL access for ad hoc inspection
+SQLite is the canonical archive. Markdown is the durable human-readable export.
 
 ## Install
 
-```bash
+Homebrew is the smallest install path on macOS and Linux:
+
+```sh
 brew install openclaw/tap/notcrawl
 ```
 
-You can also download archives, `.deb`, or `.rpm` packages from the
-[latest release](https://github.com/openclaw/notcrawl/releases/latest).
-Official macOS archives are signed with the OpenClaw Foundation Developer ID;
-local source and snapshot builds remain credential-free.
+GitHub Releases also provide signed and notarized macOS archives, Linux archives, and `.deb` and `.rpm` packages. Download the appropriate file from the [latest release](https://github.com/openclaw/notcrawl/releases/latest).
 
-Check for newer releases manually with:
+## Quick start
 
-```bash
-notcrawl check-update
-```
+With Notion Desktop installed and opened at least once:
 
-Interactive terminal runs also perform a cached daily release check and print a
-stderr notice when a newer OpenClaw release is available. Set
-`NOTCRAWL_NO_UPDATE_CHECK=1` or `CRAWLKIT_NO_UPDATE_CHECK=1` to disable that
-passive notice.
-
-## Quick Start
-
-Use the local Notion Desktop cache:
-
-```bash
-notcrawl init
-notcrawl doctor
-notcrawl status
-notcrawl report
+```sh
 notcrawl sync --source desktop
-notcrawl export-md
 notcrawl search "launch plan"
-notcrawl tui
+notcrawl export-md
 ```
 
-Or use the official Notion API:
+The sync reads a snapshot of Notion's local cache. Search uses the SQLite FTS5 index, and `export-md` writes the normalized archive under `~/.notcrawl/pages`.
 
-```bash
+Run `notcrawl doctor` if the desktop cache is not found.
+
+## Choose a source
+
+| Source | Use it for | Setup |
+|---|---|---|
+| `desktop` | Fast, local ingestion of pages Notion Desktop has cached | None beyond Notion Desktop |
+| `api` | Pages, blocks, users, comments, databases, and rows shared with an integration | Set `NOTION_TOKEN` |
+| `notion-mcp` | Targeted repair of incomplete pages through the Notion app connected in Codex | Configure the experimental connector in `config.toml` |
+
+The official API is the stable remote integration:
+
+```sh
 export NOTION_TOKEN="secret_..."
 notcrawl sync --source api
+```
+
+Notion MCP can repair known incomplete pages, fetch a page by ID or URL, or run a bounded workspace search:
+
+```sh
+notcrawl sync --source notion-mcp --page PAGE_ID
+notcrawl sync --source notion-mcp --query "launch plan" --limit 25
+```
+
+Without `--page` or `--query`, the MCP source retries known Desktop pages with missing cached content and API pages with incomplete block sync. It does not enumerate the entire workspace. Empty connector responses leave archived content unchanged and remain eligible for retry. The transport uses Codex authentication through the experimental ChatGPT apps gateway.
+
+## Work with the archive
+
+`notcrawl tui` opens a three-pane terminal browser for workspaces, teamspaces, pages, and databases. It supports keyboard and mouse navigation, filtering, sorting, local refresh, opening or copying the selected Notion URL, and local/remote state in the footer.
+
+Database rows can be exported separately from the Markdown archive:
+
+```sh
 notcrawl databases
 notcrawl export-db --database DATABASE_ID --format csv --output roadmap.csv
 notcrawl export-db --all --dir exports/csv
 ```
 
-Or repair incomplete Desktop pages through the Notion app connected in Codex:
+The main commands are:
 
-```bash
-notcrawl sync --source notion-mcp
-notcrawl sync --source notion-mcp --page PAGE_ID
-notcrawl sync --source notion-mcp --query "launch plan" --limit 25
+| Command | Purpose |
+|---|---|
+| `init` | Write a starter config |
+| `doctor` | Check config, SQLite, the desktop cache, and token presence |
+| `status` | Show archive counts, last sync time, and database/WAL size |
+| `report` | Summarize recent page, database, space, and comment activity |
+| `maintain` | Rebuild FTS, optimize indexes, and optionally run `VACUUM` |
+| `sync` | Ingest `desktop`, `api`, `notion-mcp`, or all enabled sources |
+| `tap` | Alias for `sync --source desktop` |
+| `export-md` | Render normalized Markdown from SQLite |
+| `databases` / `export-db` | List and export crawled Notion databases |
+| `search` | Search page and comment text through FTS5 |
+| `tui` | Browse archived pages and databases |
+| `sql` | Run read-only SQL against the archive |
+| `publish` | Export SQLite tables and Markdown into a git share repository |
+| `subscribe` / `update` | Merge current or historical git share snapshots |
+| `metadata` / `status --json` / `doctor --json` | Emit crawlkit control data for automation |
+
+Run `notcrawl --help` for the full command summary.
+
+## Share an archive
+
+Git share mode publishes compressed JSONL table snapshots and normalized Markdown. Another machine can subscribe and search the archive without Notion credentials.
+
+`publish --tag NAME` creates an immutable checkpoint. `subscribe` and `update` merge snapshots without deleting local-only rows by default; `--restore` requests exact replacement, and `--retain-revisions` saves replaced local payloads.
+
+Secrets are not included in Markdown or git share snapshots.
+
+## Configuration
+
+`notcrawl init` writes `~/.notcrawl/config.toml`. The default data paths are:
+
+| Data | Path |
+|---|---|
+| SQLite archive | `~/.notcrawl/notcrawl.db` |
+| Desktop snapshots | `~/.notcrawl/cache` |
+| Markdown archive | `~/.notcrawl/pages` |
+| Git share checkout | `~/.notcrawl/share` |
+
+See [`config.example.toml`](config.example.toml) for every setting.
+
+Interactive terminal runs check for a newer release once per day. `notcrawl check-update` checks immediately; set `NOTCRAWL_NO_UPDATE_CHECK=1` or `CRAWLKIT_NO_UPDATE_CHECK=1` to disable the passive check.
+
+## Safety model
+
+Desktop mode is read-only. It snapshots Notion's local SQLite database before reading it and never writes to Notion application storage. Cache coverage is opportunistic, so missing rows are not treated as deletions; explicit Notion tombstones still retire records. Markdown marks pages whose bodies were not cached so the API or MCP source can fill them later.
+
+API mode uses the official Notion API and stores raw payloads alongside normalized rows so exports can improve without another crawl.
+
+Notion MCP mode is read-only and targeted. It reads the Codex bearer credential at request time, never stores it, resolves only the connected Notion search and fetch tools, and strips signed URL credentials before persisting connector Markdown. Credentials are sent only to the configured HTTPS ChatGPT apps gateway. The gateway and Codex auth-file format are experimental contracts.
+
+## Architecture
+
+`notcrawl` uses [`crawlkit`](https://github.com/openclaw/crawlkit) for config paths, SQLite helpers, snapshot packing and import, git-backed sharing, output formatting, status payloads, and the terminal explorer. Notion API and Desktop parsing, schemas, Markdown rendering, and FTS content remain in this repository.
+
+See [`SPEC.md`](SPEC.md) for the data model and archive contracts. Maintainers can find release packaging and verification in [`docs/distribution.md`](docs/distribution.md).
+
+## Development
+
+Go 1.26.5 or newer is required.
+
+```sh
+make build
+make test
+make check
 ```
 
-Without `--page` or `--query`, this source fetches known Desktop pages that
-have no cached body or missing referenced blocks, plus API pages whose block
-sync did not complete. It does not claim to enumerate the entire workspace.
-The transport reuses Codex authentication and the configured Notion app through
-the experimental ChatGPT apps gateway. Empty connector bodies leave existing
-archive content unchanged and remain eligible for a later retry.
+`make check` runs the dependency, formatting, vet, dead-code, test, smoke, release-config, and snapshot gates used by CI. See [`CONTRIBUTING.md`](CONTRIBUTING.md) before sending a change.
 
-Default paths:
+## License
 
-- config: `~/.notcrawl/config.toml`
-- database: `~/.notcrawl/notcrawl.db`
-- cache: `~/.notcrawl/cache`
-- Markdown archive: `~/.notcrawl/pages`
-- git share repo: `~/.notcrawl/share`
-
-## Commands
-
-- `init` writes a starter config
-- `doctor` checks config, SQLite, desktop cache, and token presence
-- `status` prints archive counts, last sync time, and database/WAL size
-- `metadata --json`, `status --json`, and `doctor --json` expose crawlkit
-  control/status payloads for launchers, automation, and CI
-- `report` summarizes recent page, database, space, and comment activity
-- `maintain` rebuilds FTS, optimizes SQLite indexes, and can run `VACUUM`
-- `sync` ingests from `desktop`, `api`, `notion-mcp`, or `all`
-- `export-md` renders normalized Markdown files from SQLite
-- `databases` lists crawled Notion databases
-- `export-db` exports one crawled Notion database, or all databases with `--all --dir`, to CSV or TSV
-- `search` searches page and comment text through FTS5
-- `tui` opens the terminal archive browser for pages and databases
-- `sql` runs read-only SQL against the archive
-- `publish` exports SQLite tables and Markdown into a git share repo; `--tag` names an immutable checkpoint
-- `subscribe` clones a share repo and merges the latest snapshot into local rows; `--restore` opts into exact replacement and `--retain-revisions` saves replaced local payloads in the local-only `record_revisions` table
-- `update` merges current or `--ref` historical share data without changing the checkout; `--restore` and `--retain-revisions` select the same retention modes
-
-## Shared crawlkit surfaces
-
-`notcrawl` uses `crawlkit` for standard config paths, SQLite open/read helpers,
-snapshot packing/import, git-backed archive sharing, output formatting, status
-payloads, and the shared terminal explorer. Notion API/Desktop parsing,
-Markdown rendering, page/comment/database schemas, and Notion FTS bodies remain
-owned by `notcrawl`.
-
-The TUI follows the gitcrawl-style three-pane model: workspace/teamspace/page or
-database groups on the left, pages/databases in the middle, and a readable
-document preview plus comments and metadata on the right. It supports pane
-focus, sortable headers, mouse selection, right-click actions, and a
-local/remote footer.
-
-## Distribution
-
-Release packaging runs through the shared OpenClaw GitHub Actions workflow.
-Tagged releases publish signed and notarized macOS archives, checksums, `.deb`
-and `.rpm` packages, GitHub release notes, and a verified Homebrew tap update.
-
-See [`docs/distribution.md`](docs/distribution.md) for release operations.
-
-## Safety Model
-
-Desktop mode is read-only. It snapshots Notion's local SQLite database before
-reading it and never writes to Notion application storage. Desktop cache
-coverage is opportunistic; Markdown exports mark pages whose referenced blocks
-were not cached locally, and API sync can fill content shared with an integration.
-Rows missing from a later Desktop snapshot are preserved because cache eviction
-is not a deletion signal; explicit Notion tombstones still retire records.
-
-API mode uses the official Notion API. It stores raw API payloads alongside
-normalized rows so renderers can improve without recrawling.
-
-Notion MCP mode is read-only and targeted. It reads the Codex bearer credential
-at request time, never stores it, dynamically resolves only the connected
-Notion search/fetch tools, and strips signed URL credentials before persisting
-connector Markdown, including page properties. Credentials are sent only to the
-exact HTTPS ChatGPT apps gateway. The gateway and Codex auth-file format are
-experimental contracts and may change.
-
-Secrets are never exported into Markdown or git-share snapshots.
+MIT. See [`LICENSE`](LICENSE).
