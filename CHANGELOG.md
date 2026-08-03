@@ -2,6 +2,10 @@
 
 ## 0.5.7 - Unreleased
 
+### Fixed
+
+- Use a 60-second default HTTP client for Notion API sync when no client is injected, so stalled API peers cannot hang the CLI forever. Thanks @SebTardif.
+
 ## 0.5.6 - 2026-08-02
 
 ### Dependencies

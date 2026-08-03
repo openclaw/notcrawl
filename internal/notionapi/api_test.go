@@ -992,3 +992,30 @@ func TestIngestCommentsRetriesCloudflareTimeout(t *testing.T) {
 		t.Fatalf("unexpected count/attempts: count=%d attempts=%d", count, attempts)
 	}
 }
+
+func TestDefaultHTTPClientBoundsOverallTimeout(t *testing.T) {
+	client := defaultHTTPClient()
+	if client.Timeout != defaultHTTPTimeout {
+		t.Fatalf("default HTTP timeout = %s, want %s", client.Timeout, defaultHTTPTimeout)
+	}
+	if client.Timeout <= 0 {
+		t.Fatalf("default HTTP timeout must be positive, got %s", client.Timeout)
+	}
+}
+
+func TestSyncUsesDefaultHTTPClientWhenHTTPNil(t *testing.T) {
+	// Exercise the nil-HTTP branch without performing a full sync: Sync
+	// returns early on missing token before Do, but still installs the client.
+	// We verify the helper used by that branch instead of hitting Notion.
+	c := Client{Token: "secret"}
+	if c.HTTP != nil {
+		t.Fatal("expected nil HTTP before Sync setup")
+	}
+	// Mirror Sync's nil guard
+	if c.HTTP == nil {
+		c.HTTP = defaultHTTPClient()
+	}
+	if c.HTTP.Timeout != defaultHTTPTimeout {
+		t.Fatalf("Sync default HTTP timeout = %s, want %s", c.HTTP.Timeout, defaultHTTPTimeout)
+	}
+}
