@@ -2,6 +2,10 @@
 
 ## 0.5.7 - Unreleased
 
+### Fixed
+
+- Bound default Notion API requests to 60 seconds so a stalled peer cannot hang sync indefinitely. Thanks @SebTardif.
+
 ## 0.5.6 - 2026-08-02
 
 ### Dependencies

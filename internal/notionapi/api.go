@@ -20,6 +20,21 @@ const SourceName = "api"
 
 const maxAPIAttempts = 4
 
+// defaultHTTPTimeout bounds Notion API requests when Client.HTTP is nil.
+// Callers may inject a custom client, including one with no overall timeout.
+const defaultHTTPTimeout = 60 * time.Second
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: defaultHTTPTimeout}
+}
+
+func httpClientOrDefault(client *http.Client) *http.Client {
+	if client == nil {
+		return defaultHTTPClient()
+	}
+	return client
+}
+
 type Client struct {
 	BaseURL string
 	Version string
@@ -47,9 +62,7 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 	if c.Version == "" {
 		c.Version = "2026-03-11"
 	}
-	if c.HTTP == nil {
-		c.HTTP = http.DefaultClient
-	}
+	c.HTTP = httpClientOrDefault(c.HTTP)
 	var s Summary
 	if err := st.DeferPageFTS(ctx, func() error {
 		users, err := c.listUsers(ctx)
