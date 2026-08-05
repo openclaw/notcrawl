@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/notcrawl/internal/store"
 )
@@ -990,5 +991,38 @@ func TestIngestCommentsRetriesCloudflareTimeout(t *testing.T) {
 	}
 	if count != 0 || attempts != 2 {
 		t.Fatalf("unexpected count/attempts: count=%d attempts=%d", count, attempts)
+	}
+}
+
+func TestDefaultHTTPClientBoundsOverallTimeout(t *testing.T) {
+	client := defaultHTTPClient()
+	if client.Timeout != defaultHTTPTimeout {
+		t.Fatalf("default HTTP timeout = %s, want %s", client.Timeout, defaultHTTPTimeout)
+	}
+}
+
+func TestHTTPClientOrDefaultPreservesInjectedClient(t *testing.T) {
+	custom := &http.Client{Timeout: 5 * time.Second}
+	if got := httpClientOrDefault(custom); got != custom {
+		t.Fatal("injected client must be preserved")
+	}
+}
+
+func TestSyncUsesDefaultHTTPClientWhenHTTPNil(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
+	}))
+	defer server.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	client := Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret"}
+	if _, err := client.Sync(context.Background(), st); err != nil {
+		t.Fatalf("Sync with nil HTTP: %v", err)
 	}
 }
