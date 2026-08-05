@@ -6,6 +6,10 @@
 
 - Bound default Notion API requests to 60 seconds so a stalled peer cannot hang sync indefinitely. Thanks @SebTardif.
 
+### Dependencies
+
+- Update CrawlKit to v0.14.5, modernc.org/sqlite to v1.56.0, indirect Go modules, and the vulnerability and dead-code tooling.
+
 ## 0.5.6 - 2026-08-02
 
 ### Dependencies
