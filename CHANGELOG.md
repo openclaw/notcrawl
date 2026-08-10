@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Dependencies
+
+- Update CrawlKit to v0.14.6, fixing TUI filter input, Unicode backspace handling, and overlapping refreshes; update Kong and indirect Go modules.
+
 ## 0.5.7 - 2026-08-02
 
 ### Fixed
