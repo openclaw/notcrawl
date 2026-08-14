@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## v0.5.8 - 2026-08-14
 
 ### Dependencies
