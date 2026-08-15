@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.9 - Unreleased
+
+### Fixed
+
+- Reject a repeated Notion MCP `tools/list` nextCursor so a sticky pager cannot livelock sync.
+
 ## v0.5.8 - 2026-08-14
 
 ### Dependencies

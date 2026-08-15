@@ -678,6 +678,7 @@ func (c Client) validatedBaseURL() (string, error) {
 func (g *gatewayClient) listAllTools(ctx context.Context) ([]toolDefinition, error) {
 	var all []toolDefinition
 	cursor := ""
+	seen := map[string]bool{}
 	for {
 		params := map[string]any{}
 		if cursor != "" {
@@ -691,6 +692,10 @@ func (g *gatewayClient) listAllTools(ctx context.Context) ([]toolDefinition, err
 		if strings.TrimSpace(page.NextCursor) == "" {
 			return all, nil
 		}
+		if seen[page.NextCursor] {
+			return nil, fmt.Errorf("MCP tools/list repeated cursor %q", page.NextCursor)
+		}
+		seen[page.NextCursor] = true
 		cursor = page.NextCursor
 	}
 }

@@ -531,6 +531,53 @@ func TestClientRejectsUntrustedBaseURLBeforeReadingAuth(t *testing.T) {
 	}
 }
 
+func TestListAllToolsRejectsRepeatedCursor(t *testing.T) {
+	pager := &repeatingCursorPager{cursor: "same"}
+	server := httptest.NewServer(http.HandlerFunc(pager.serve))
+	defer server.Close()
+
+	_, err := (&gatewayClient{
+		http:    server.Client(),
+		baseURL: server.URL,
+		auth:    authInfo{AccessToken: "test-token"},
+	}).listAllTools(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `repeated cursor "same"`) {
+		t.Fatalf("err = %v, want repeated cursor", err)
+	}
+	if pager.calls != 2 {
+		t.Fatalf("tools/list calls = %d, want 2", pager.calls)
+	}
+}
+
+type repeatingCursorPager struct {
+	cursor string
+	calls  int
+}
+
+func (p *repeatingCursorPager) serve(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		ID     any    `json:"id"`
+		Method string `json:"method"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if request.Method != "tools/list" {
+		http.Error(w, "unexpected method "+request.Method, http.StatusBadRequest)
+		return
+	}
+	p.calls++
+	if p.calls > 5 {
+		http.Error(w, "sticky pager was not stopped", http.StatusInternalServerError)
+		return
+	}
+	writeRPCResult(w, request.ID, map[string]any{
+		"tools":      []map[string]any{{"name": "notion_fetch"}},
+		"nextCursor": p.cursor,
+	})
+}
+
 func TestExtractEnhancedMarkdownPreservesProperties(t *testing.T) {
 	got := extractEnhancedMarkdown(`<page><properties>{"Status":"In progress"}</properties><content>Body</content></page>`)
 	for _, want := range []string{"## Properties", `    {"Status":"In progress"}`, "Body"} {
