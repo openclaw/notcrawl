@@ -3,6 +3,7 @@ package notionmcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -549,8 +550,27 @@ func TestListAllToolsRejectsRepeatedCursor(t *testing.T) {
 	}
 }
 
+func TestListAllToolsRejectsUnboundedUniqueCursors(t *testing.T) {
+	pager := &repeatingCursorPager{unique: true}
+	server := httptest.NewServer(http.HandlerFunc(pager.serve))
+	defer server.Close()
+
+	_, err := (&gatewayClient{
+		http:    server.Client(),
+		baseURL: server.URL,
+		auth:    authInfo{AccessToken: "test-token"},
+	}).listAllTools(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exceeded 100 pages") {
+		t.Fatalf("err = %v, want page limit", err)
+	}
+	if pager.calls != maxToolsListPages {
+		t.Fatalf("tools/list calls = %d, want %d", pager.calls, maxToolsListPages)
+	}
+}
+
 type repeatingCursorPager struct {
 	cursor string
+	unique bool
 	calls  int
 }
 
@@ -568,13 +588,17 @@ func (p *repeatingCursorPager) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.calls++
-	if p.calls > 5 {
+	if !p.unique && p.calls > 5 {
 		http.Error(w, "sticky pager was not stopped", http.StatusInternalServerError)
 		return
 	}
+	cursor := p.cursor
+	if p.unique {
+		cursor = fmt.Sprintf("cursor-%d", p.calls)
+	}
 	writeRPCResult(w, request.ID, map[string]any{
 		"tools":      []map[string]any{{"name": "notion_fetch"}},
-		"nextCursor": p.cursor,
+		"nextCursor": cursor,
 	})
 }
 
