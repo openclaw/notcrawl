@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.9 - Unreleased
+
+### Fixed
+
+- Reject repeated Notion MCP `tools/list` cursors and cap discovery at 100 pages so a malformed pager cannot livelock sync.
+
 ## v0.5.8 - 2026-08-14
 
 ### Dependencies

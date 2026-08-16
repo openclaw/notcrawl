@@ -18,7 +18,10 @@ import (
 	"github.com/openclaw/notcrawl/internal/store"
 )
 
-const defaultBaseURL = "https://chatgpt.com/backend-api/wham/apps"
+const (
+	defaultBaseURL    = "https://chatgpt.com/backend-api/wham/apps"
+	maxToolsListPages = 100
+)
 
 var (
 	pageIDPattern = regexp.MustCompile(`(?i)[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}`)
@@ -678,7 +681,8 @@ func (c Client) validatedBaseURL() (string, error) {
 func (g *gatewayClient) listAllTools(ctx context.Context) ([]toolDefinition, error) {
 	var all []toolDefinition
 	cursor := ""
-	for {
+	seen := map[string]bool{}
+	for range maxToolsListPages {
 		params := map[string]any{}
 		if cursor != "" {
 			params["cursor"] = cursor
@@ -691,8 +695,13 @@ func (g *gatewayClient) listAllTools(ctx context.Context) ([]toolDefinition, err
 		if strings.TrimSpace(page.NextCursor) == "" {
 			return all, nil
 		}
+		if seen[page.NextCursor] {
+			return nil, fmt.Errorf("MCP tools/list repeated cursor %q", page.NextCursor)
+		}
+		seen[page.NextCursor] = true
 		cursor = page.NextCursor
 	}
+	return nil, fmt.Errorf("MCP tools/list exceeded %d pages", maxToolsListPages)
 }
 
 func (g *gatewayClient) fetchPage(ctx context.Context, toolName, ref string) (fetchResult, error) {
