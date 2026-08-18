@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1025,4 +1026,90 @@ func TestSyncUsesDefaultHTTPClientWhenHTTPNil(t *testing.T) {
 	if _, err := client.Sync(context.Background(), st); err != nil {
 		t.Fatalf("Sync with nil HTTP: %v", err)
 	}
+}
+
+func TestListUsersRejectsRepeatedCursor(t *testing.T) {
+	pager := &repeatingListCursorPager{cursor: "same"}
+	server := httptest.NewServer(http.HandlerFunc(pager.serve))
+	defer server.Close()
+
+	_, err := (Client{
+		BaseURL: server.URL,
+		Version: "2022-06-28",
+		Token:   "secret",
+		HTTP:    server.Client(),
+	}).listUsers(context.Background())
+	if err == nil || !strings.Contains(err.Error(), `repeated cursor "same"`) {
+		t.Fatalf("err = %v, want repeated cursor", err)
+	}
+	if pager.calls != 2 {
+		t.Fatalf("users/list calls = %d, want 2", pager.calls)
+	}
+}
+
+func TestListUsersRejectsUnboundedUniqueCursors(t *testing.T) {
+	pager := &repeatingListCursorPager{unique: true}
+	server := httptest.NewServer(http.HandlerFunc(pager.serve))
+	defer server.Close()
+
+	_, err := (Client{
+		BaseURL: server.URL,
+		Version: "2022-06-28",
+		Token:   "secret",
+		HTTP:    server.Client(),
+	}).listUsers(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exceeded 100 pages") {
+		t.Fatalf("err = %v, want page limit", err)
+	}
+	if pager.calls != maxAPIListPages {
+		t.Fatalf("users/list calls = %d, want %d", pager.calls, maxAPIListPages)
+	}
+}
+
+func TestNextListCursorRejectsRepeatedAndEmpty(t *testing.T) {
+	seen := map[string]bool{}
+	next, more, err := nextListCursor(obj{"has_more": true, "next_cursor": "abc"}, seen, "Notion users/list")
+	if err != nil || !more || next != "abc" {
+		t.Fatalf("first cursor: next=%q more=%v err=%v", next, more, err)
+	}
+	_, more, err = nextListCursor(obj{"has_more": true, "next_cursor": "abc"}, seen, "Notion users/list")
+	if err == nil || !strings.Contains(err.Error(), `repeated cursor "abc"`) || more {
+		t.Fatalf("repeated: more=%v err=%v", more, err)
+	}
+	next, more, err = nextListCursor(obj{"has_more": true, "next_cursor": "  "}, seen, "Notion users/list")
+	if err != nil || more || next != "" {
+		t.Fatalf("empty cursor: next=%q more=%v err=%v", next, more, err)
+	}
+	next, more, err = nextListCursor(obj{"has_more": false, "next_cursor": "abc"}, seen, "Notion users/list")
+	if err != nil || more || next != "" {
+		t.Fatalf("has_more false: next=%q more=%v err=%v", next, more, err)
+	}
+}
+
+type repeatingListCursorPager struct {
+	cursor string
+	unique bool
+	calls  int
+}
+
+func (p *repeatingListCursorPager) serve(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/users" {
+		http.Error(w, "unexpected path "+r.URL.Path, http.StatusBadRequest)
+		return
+	}
+	p.calls++
+	if !p.unique && p.calls > 5 {
+		http.Error(w, "sticky pager was not stopped", http.StatusInternalServerError)
+		return
+	}
+	if p.unique && p.calls > maxAPIListPages+5 {
+		http.Error(w, "unique pager was not stopped", http.StatusInternalServerError)
+		return
+	}
+	cursor := p.cursor
+	if p.unique {
+		cursor = fmt.Sprintf("cursor-%d", p.calls)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"object":"list","results":[],"has_more":true,"next_cursor":%q}`, cursor)
 }

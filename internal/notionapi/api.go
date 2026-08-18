@@ -20,6 +20,10 @@ const SourceName = "api"
 
 const maxAPIAttempts = 4
 
+// maxAPIListPages caps official Notion list pagination so a stuck
+// has_more + next_cursor pair cannot livelock sync.
+const maxAPIListPages = 100
+
 // defaultHTTPTimeout bounds Notion API requests when Client.HTTP is nil.
 // Callers may inject a custom client, including one with no overall timeout.
 const defaultHTTPTimeout = 60 * time.Second
@@ -154,10 +158,27 @@ func (o obj) mapObj(key string) obj {
 	return nil
 }
 
+func nextListCursor(resp obj, seen map[string]bool, op string) (string, bool, error) {
+	if !truthy(resp["has_more"]) {
+		return "", false, nil
+	}
+	cursor, _ := resp["next_cursor"].(string)
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return "", false, nil
+	}
+	if seen[cursor] {
+		return "", false, fmt.Errorf("%s repeated cursor %q", op, cursor)
+	}
+	seen[cursor] = true
+	return cursor, true, nil
+}
+
 func (c Client) listUsers(ctx context.Context) ([]obj, error) {
 	var out []obj
 	cursor := ""
-	for {
+	seen := map[string]bool{}
+	for range maxAPIListPages {
 		path := "/users?page_size=100"
 		if cursor != "" {
 			path += "&start_cursor=" + url.QueryEscape(cursor)
@@ -171,14 +192,16 @@ func (c Client) listUsers(ctx context.Context) ([]obj, error) {
 				out = append(out, obj(m))
 			}
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion users/list")
+		if err != nil {
+			return nil, err
+		}
+		if !more {
 			return out, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return out, nil
-		}
+		cursor = next
 	}
+	return nil, fmt.Errorf("Notion users/list exceeded %d pages", maxAPIListPages)
 }
 
 func (c Client) searchPages(ctx context.Context) ([]obj, error) {
@@ -192,7 +215,8 @@ func (c Client) searchCollections(ctx context.Context) ([]obj, error) {
 func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, error) {
 	var out []obj
 	cursor := ""
-	for {
+	seen := map[string]bool{}
+	for range maxAPIListPages {
 		body := obj{"page_size": 100, "filter": obj{"property": "object", "value": objectType}}
 		if cursor != "" {
 			body["start_cursor"] = cursor
@@ -206,14 +230,16 @@ func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, er
 				out = append(out, obj(m))
 			}
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion search")
+		if err != nil {
+			return nil, err
+		}
+		if !more {
 			return out, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return out, nil
-		}
+		cursor = next
 	}
+	return nil, fmt.Errorf("Notion search exceeded %d pages", maxAPIListPages)
 }
 
 type ingestPageOptions struct {
@@ -341,7 +367,8 @@ func (c Client) ingestCollection(ctx context.Context, st *store.Store, collectio
 func (c Client) queryCollection(ctx context.Context, st *store.Store, collectionID string) (int, error) {
 	var count int
 	cursor := ""
-	for {
+	seen := map[string]bool{}
+	for range maxAPIListPages {
 		body := obj{"page_size": 100}
 		if cursor != "" {
 			body["start_cursor"] = cursor
@@ -372,14 +399,16 @@ func (c Client) queryCollection(ctx context.Context, st *store.Store, collection
 			}
 			count++
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion collection query")
+		if err != nil {
+			return count, err
+		}
+		if !more {
 			return count, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return count, nil
-		}
+		cursor = next
 	}
+	return count, fmt.Errorf("Notion collection query exceeded %d pages", maxAPIListPages)
 }
 
 func (c Client) collectionSearchType() string {
@@ -425,8 +454,9 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 	var count int
 	var warnings []string
 	cursor := ""
+	seen := map[string]bool{}
 	var displayOrder int64
-	for {
+	for range maxAPIListPages {
 		path := fmt.Sprintf("/blocks/%s/children?page_size=100", url.PathEscape(parentID))
 		if cursor != "" {
 			path += "&start_cursor=" + url.QueryEscape(cursor)
@@ -480,14 +510,16 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 				count += n
 			}
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion block children")
+		if err != nil {
+			return count, warnings, err
+		}
+		if !more {
 			return count, warnings, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return count, warnings, nil
-		}
+		cursor = next
 	}
+	return count, warnings, fmt.Errorf("Notion block children exceeded %d pages", maxAPIListPages)
 }
 
 func shouldFetchBlockChildren(block obj) bool {
@@ -511,7 +543,8 @@ func isSyncedBlockCopy(block obj) bool {
 func (c Client) ingestComments(ctx context.Context, st *store.Store, pageID, spaceID string) (int, error) {
 	var count int
 	cursor := ""
-	for {
+	seen := map[string]bool{}
+	for range maxAPIListPages {
 		path := "/comments?block_id=" + url.QueryEscape(pageID) + "&page_size=100"
 		if cursor != "" {
 			path += "&start_cursor=" + url.QueryEscape(cursor)
@@ -548,14 +581,16 @@ func (c Client) ingestComments(ctx context.Context, st *store.Store, pageID, spa
 			}
 			count++
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion comments/list")
+		if err != nil {
+			return count, err
+		}
+		if !more {
 			return count, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return count, nil
-		}
+		cursor = next
 	}
+	return count, fmt.Errorf("Notion comments/list exceeded %d pages", maxAPIListPages)
 }
 
 func (c Client) do(ctx context.Context, method, path string, body any, out any) error {
