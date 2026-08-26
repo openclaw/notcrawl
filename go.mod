@@ -4,7 +4,7 @@ go 1.26.6
 
 require (
 	github.com/alecthomas/kong v1.16.1
-	modernc.org/sqlite v1.56.0
+	modernc.org/sqlite v1.57.0
 )
 
 require (
