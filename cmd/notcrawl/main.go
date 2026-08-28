@@ -408,7 +408,9 @@ func runMaintain(ctx context.Context, stdout io.Writer, cfg config.Config, args 
 
 func runSync(ctx context.Context, stdout, stderr io.Writer, cfg config.Config, args []string) (err error) {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	source := fs.String("source", "all", "source: desktop, api, notion-mcp, all")
+	verbose := fs.Bool("verbose", false, "write redacted sync diagnostics to stderr")
 	limit := fs.Int("limit", cfg.Notion.MCP.MaxPages, "maximum Notion MCP pages to fetch; 0 means unlimited")
 	var pageIDs, queries stringListFlag
 	fs.Var(&pageIDs, "page", "Notion page ID or URL to fetch; repeatable")
@@ -422,12 +424,20 @@ func runSync(ctx context.Context, stdout, stderr io.Writer, cfg config.Config, a
 	if *source != "notion-mcp" && (len(pageIDs) > 0 || len(queries) > 0 || *limit != cfg.Notion.MCP.MaxPages) {
 		return fmt.Errorf("--page, --query, and --limit apply only to --source notion-mcp")
 	}
+	trace := newSyncTrace(stderr, *verbose)
+	defer func() { err = trace.finish(err) }()
+	trace.start("archive")
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
-	tracker := progress.New(progressLogger(stderr), progress.Options{
+	trace.done()
+	progressOutput := stderr
+	if *verbose {
+		progressOutput = io.Discard
+	}
+	tracker := progress.New(progressLogger(progressOutput), progress.Options{
 		Name:  "sync",
 		Unit:  "stages",
 		Total: int64(syncStageTotal(*source, cfg)),
@@ -441,67 +451,89 @@ func runSync(ctx context.Context, stdout, stderr io.Writer, cfg config.Config, a
 	}()
 	switch *source {
 	case "desktop":
+		trace.start("desktop")
 		s, err := notiondesktop.Ingest(ctx, st, cfg.Notion.Desktop.Path, cfg.CacheDir)
 		if err != nil {
 			return err
 		}
 		completed++
 		tracker.Set(completed, "phase", "desktop", "pages", s.Pages, "blocks", s.Blocks, "collections", s.Collections)
+		trace.done("pages", s.Pages, "blocks", s.Blocks, "collections", s.Collections, "comments", s.Comments)
 		fmt.Fprintf(stdout, "desktop: pages=%d blocks=%d teams=%d collections=%d comments=%d snapshot=%s\n", s.Pages, s.Blocks, s.Teams, s.Collections, s.Comments, s.Source.Snapshot)
 	case "api":
+		trace.start("api")
 		s, err := notionapi.Client{
 			BaseURL: cfg.Notion.API.BaseURL,
 			Version: cfg.Notion.API.Version,
 			Token:   cfg.APIToken(),
+			Trace:   trace.apiLogger(),
 		}.Sync(ctx, st)
 		if err != nil {
 			return err
 		}
 		completed++
 		tracker.Set(completed, "phase", "api", "pages", s.Pages, "databases", s.Databases, "blocks", s.Blocks)
-		writeAPIWarnings(stderr, s)
+		trace.done("users", s.Users, "pages", s.Pages, "databases", s.Databases, "database_rows", s.DatabaseRows, "blocks", s.Blocks, "comments", s.Comments, "warnings", len(s.Warnings))
+		if !*verbose {
+			writeAPIWarnings(stderr, s)
+		}
 		fmt.Fprintf(stdout, "api: users=%d pages=%d databases=%d database_rows=%d blocks=%d comments=%d\n", s.Users, s.Pages, s.Databases, s.DatabaseRows, s.Blocks, s.Comments)
 	case "notion-mcp":
+		trace.start("notion-mcp")
 		s, err := syncNotionMCP(ctx, st, cfg, notionmcp.SyncOptions{PageIDs: pageIDs, Queries: queries, Limit: *limit})
 		if err != nil {
 			return err
 		}
 		completed++
 		tracker.Set(completed, "phase", "notion-mcp", "candidates", s.Candidates, "pages", s.Pages, "failed", s.Failed)
-		writeNotionMCPWarnings(stderr, s)
+		trace.done("candidates", s.Candidates, "pages", s.Pages, "empty", s.EmptyPages, "failed", s.Failed, "warnings", len(s.Warnings))
+		if !*verbose {
+			writeNotionMCPWarnings(stderr, s)
+		}
 		fmt.Fprintf(stdout, "notion-mcp: candidates=%d pages=%d empty=%d failed=%d\n", s.Candidates, s.Pages, s.EmptyPages, s.Failed)
 	case "all":
 		if cfg.Notion.Desktop.Enabled {
+			trace.start("desktop")
 			s, err := notiondesktop.Ingest(ctx, st, cfg.Notion.Desktop.Path, cfg.CacheDir)
 			if err != nil {
 				return err
 			}
 			completed++
 			tracker.Set(completed, "phase", "desktop", "pages", s.Pages, "blocks", s.Blocks, "collections", s.Collections)
+			trace.done("pages", s.Pages, "blocks", s.Blocks, "collections", s.Collections, "comments", s.Comments)
 			fmt.Fprintf(stdout, "desktop: pages=%d blocks=%d teams=%d collections=%d comments=%d snapshot=%s\n", s.Pages, s.Blocks, s.Teams, s.Collections, s.Comments, s.Source.Snapshot)
 		}
 		if cfg.Notion.API.Enabled && cfg.APIToken() != "" {
+			trace.start("api")
 			s, err := notionapi.Client{
 				BaseURL: cfg.Notion.API.BaseURL,
 				Version: cfg.Notion.API.Version,
 				Token:   cfg.APIToken(),
+				Trace:   trace.apiLogger(),
 			}.Sync(ctx, st)
 			if err != nil {
 				return err
 			}
 			completed++
 			tracker.Set(completed, "phase", "api", "pages", s.Pages, "databases", s.Databases, "blocks", s.Blocks)
-			writeAPIWarnings(stderr, s)
+			trace.done("users", s.Users, "pages", s.Pages, "databases", s.Databases, "database_rows", s.DatabaseRows, "blocks", s.Blocks, "comments", s.Comments, "warnings", len(s.Warnings))
+			if !*verbose {
+				writeAPIWarnings(stderr, s)
+			}
 			fmt.Fprintf(stdout, "api: users=%d pages=%d databases=%d database_rows=%d blocks=%d comments=%d\n", s.Users, s.Pages, s.Databases, s.DatabaseRows, s.Blocks, s.Comments)
 		}
 		if cfg.Notion.MCP.Enabled {
+			trace.start("notion-mcp")
 			s, err := syncNotionMCP(ctx, st, cfg, notionmcp.SyncOptions{Limit: cfg.Notion.MCP.MaxPages})
 			if err != nil {
 				return err
 			}
 			completed++
 			tracker.Set(completed, "phase", "notion-mcp", "candidates", s.Candidates, "pages", s.Pages, "failed", s.Failed)
-			writeNotionMCPWarnings(stderr, s)
+			trace.done("candidates", s.Candidates, "pages", s.Pages, "empty", s.EmptyPages, "failed", s.Failed, "warnings", len(s.Warnings))
+			if !*verbose {
+				writeNotionMCPWarnings(stderr, s)
+			}
 			fmt.Fprintf(stdout, "notion-mcp: candidates=%d pages=%d empty=%d failed=%d\n", s.Candidates, s.Pages, s.EmptyPages, s.Failed)
 		}
 	default:

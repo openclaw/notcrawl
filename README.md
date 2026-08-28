@@ -51,6 +51,14 @@ export NOTION_TOKEN="secret_..."
 notcrawl sync --source api
 ```
 
+For a slow or stalled sync, add `--verbose` to that invocation:
+
+```sh
+notcrawl sync --source api --verbose
+```
+
+Verbose diagnostics go to stderr and report source phases, elapsed time, and counts. Official API sync also reports request attempts, endpoint classes, numeric HTTP statuses, and retry delays. No credentials, headers, request/response bodies, raw URLs, cursors, page identifiers, or upstream error text are logged. Warnings become counts and failures use a fixed message in verbose mode. Normal stdout is unchanged and may still contain local paths; without `--verbose`, the existing progress, warnings, and errors are unchanged. Desktop and MCP sync report source phases and counts, not per-request API traces.
+
 Notion MCP can repair known incomplete pages, fetch a page by ID or URL, or run a bounded workspace search:
 
 ```sh

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -40,6 +41,7 @@ type Client struct {
 	Version string
 	Token   string
 	HTTP    *http.Client
+	Trace   *slog.Logger
 }
 
 type Summary struct {
@@ -65,6 +67,8 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 	c.HTTP = httpClientOrDefault(c.HTTP)
 	var s Summary
 	if err := st.DeferPageFTS(ctx, func() error {
+		started := time.Now()
+		c.tracePhase("users", "started", started)
 		users, err := c.listUsers(ctx)
 		if err != nil {
 			if !isRestrictedResourceError(err) {
@@ -82,6 +86,9 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 				s.Users++
 			}
 		}
+		c.tracePhase("users", "finished", started, "users", s.Users)
+		started = time.Now()
+		c.tracePhase("pages", "started", started)
 		pages, err := c.searchPages(ctx)
 		if err != nil {
 			return err
@@ -95,7 +102,11 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 			s.Blocks += count
 			s.Comments += comments
 			s.Warnings = append(s.Warnings, warnings...)
+			c.tracePhase("pages", "progress", started, "pages", s.Pages, "blocks", s.Blocks, "comments", s.Comments)
 		}
+		c.tracePhase("pages", "finished", started, "pages", s.Pages, "blocks", s.Blocks, "comments", s.Comments)
+		started = time.Now()
+		c.tracePhase("collections", "started", started)
 		collections, err := c.searchCollections(ctx)
 		if err != nil {
 			return err
@@ -109,7 +120,9 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 			}
 			s.Databases++
 			s.DatabaseRows += rows
+			c.tracePhase("collections", "progress", started, "databases", s.Databases, "database_rows", s.DatabaseRows)
 		}
+		c.tracePhase("collections", "finished", started, "databases", s.Databases, "database_rows", s.DatabaseRows)
 		if s.Pages == 0 && s.Databases == 0 && s.Blocks == 0 && s.Comments == 0 {
 			status, err := st.Status(ctx)
 			if err != nil {
@@ -568,12 +581,15 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		bodyBytes = b
 	}
 	for attempt := 1; attempt <= maxAPIAttempts; attempt++ {
+		started := time.Now()
+		c.traceRequest(path, "started", attempt, 0, started, 0)
 		var reader io.Reader
 		if bodyBytes != nil {
 			reader = bytes.NewReader(bodyBytes)
 		}
 		req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, reader)
 		if err != nil {
+			c.traceRequest(path, "request_error", attempt, 0, started, 0)
 			return err
 		}
 		req.Header.Set("Authorization", "Bearer "+c.Token)
@@ -584,7 +600,9 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		}
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
+			c.traceRequest(path, "transport_error", attempt, 0, started, 0)
 			if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, method, path, err) {
+				c.traceRequest(path, "retry", attempt, 0, started, 0)
 				if err := waitBeforeRetry(ctx, 0); err != nil {
 					return err
 				}
@@ -592,11 +610,14 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 			}
 			return err
 		}
+		c.traceRequest(path, "received", attempt, resp.StatusCode, started, 0)
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			responseBody, readErr := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if readErr != nil {
+				c.traceRequest(path, "read_error", attempt, resp.StatusCode, started, 0)
 				if attempt < maxAPIAttempts && shouldRetryTransportError(ctx, method, path, readErr) {
+					c.traceRequest(path, "retry", attempt, resp.StatusCode, started, 0)
 					if err := waitBeforeRetry(ctx, 0); err != nil {
 						return err
 					}
@@ -604,13 +625,21 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 				}
 				return readErr
 			}
-			return json.Unmarshal(responseBody, out)
+			err := json.Unmarshal(responseBody, out)
+			state := "finished"
+			if err != nil {
+				state = "decode_error"
+			}
+			c.traceRequest(path, state, attempt, resp.StatusCode, started, 0)
+			return err
 		}
 
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
+		c.traceRequest(path, "failed", attempt, resp.StatusCode, started, 0)
 		apiErr := apiErrorFromResponse(method, path, resp, b)
 		if attempt < maxAPIAttempts && shouldRetry(apiErr) {
+			c.traceRequest(path, "retry", attempt, resp.StatusCode, started, apiErr.RetryAfter)
 			if err := waitBeforeRetry(ctx, apiErr.RetryAfter); err != nil {
 				return err
 			}
