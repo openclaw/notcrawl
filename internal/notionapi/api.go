@@ -167,9 +167,26 @@ func (o obj) mapObj(key string) obj {
 	return nil
 }
 
+func nextListCursor(resp obj, seen map[string]bool, op string) (string, bool, error) {
+	if !truthy(resp["has_more"]) {
+		return "", false, nil
+	}
+	cursor, _ := resp["next_cursor"].(string)
+	if cursor == "" {
+		return "", false, nil
+	}
+	// Cursors are opaque. Compare exact values without limiting healthy listings.
+	if seen[cursor] {
+		return "", false, fmt.Errorf("%s repeated cursor", op)
+	}
+	seen[cursor] = true
+	return cursor, true, nil
+}
+
 func (c Client) listUsers(ctx context.Context) ([]obj, error) {
 	var out []obj
 	cursor := ""
+	seen := map[string]bool{}
 	for {
 		path := "/users?page_size=100"
 		if cursor != "" {
@@ -184,13 +201,14 @@ func (c Client) listUsers(ctx context.Context) ([]obj, error) {
 				out = append(out, obj(m))
 			}
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion users/list")
+		if err != nil {
+			return nil, err
+		}
+		if !more {
 			return out, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return out, nil
-		}
+		cursor = next
 	}
 }
 
@@ -205,6 +223,7 @@ func (c Client) searchCollections(ctx context.Context) ([]obj, error) {
 func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, error) {
 	var out []obj
 	cursor := ""
+	seen := map[string]bool{}
 	for {
 		body := obj{"page_size": 100, "filter": obj{"property": "object", "value": objectType}}
 		if cursor != "" {
@@ -219,13 +238,14 @@ func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, er
 				out = append(out, obj(m))
 			}
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion search")
+		if err != nil {
+			return nil, err
+		}
+		if !more {
 			return out, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return out, nil
-		}
+		cursor = next
 	}
 }
 
@@ -354,6 +374,7 @@ func (c Client) ingestCollection(ctx context.Context, st *store.Store, collectio
 func (c Client) queryCollection(ctx context.Context, st *store.Store, collectionID string) (int, error) {
 	var count int
 	cursor := ""
+	seen := map[string]bool{}
 	for {
 		body := obj{"page_size": 100}
 		if cursor != "" {
@@ -385,13 +406,14 @@ func (c Client) queryCollection(ctx context.Context, st *store.Store, collection
 			}
 			count++
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion collection query")
+		if err != nil {
+			return count, err
+		}
+		if !more {
 			return count, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return count, nil
-		}
+		cursor = next
 	}
 }
 
@@ -438,6 +460,7 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 	var count int
 	var warnings []string
 	cursor := ""
+	seen := map[string]bool{}
 	var displayOrder int64
 	for {
 		path := fmt.Sprintf("/blocks/%s/children?page_size=100", url.PathEscape(parentID))
@@ -493,13 +516,14 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 				count += n
 			}
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion block children")
+		if err != nil {
+			return count, warnings, err
+		}
+		if !more {
 			return count, warnings, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return count, warnings, nil
-		}
+		cursor = next
 	}
 }
 
@@ -524,6 +548,7 @@ func isSyncedBlockCopy(block obj) bool {
 func (c Client) ingestComments(ctx context.Context, st *store.Store, pageID, spaceID string) (int, error) {
 	var count int
 	cursor := ""
+	seen := map[string]bool{}
 	for {
 		path := "/comments?block_id=" + url.QueryEscape(pageID) + "&page_size=100"
 		if cursor != "" {
@@ -561,13 +586,14 @@ func (c Client) ingestComments(ctx context.Context, st *store.Store, pageID, spa
 			}
 			count++
 		}
-		if !truthy(resp["has_more"]) {
+		next, more, err := nextListCursor(resp, seen, "Notion comments/list")
+		if err != nil {
+			return count, err
+		}
+		if !more {
 			return count, nil
 		}
-		cursor, _ = resp["next_cursor"].(string)
-		if cursor == "" {
-			return count, nil
-		}
+		cursor = next
 	}
 }
 
