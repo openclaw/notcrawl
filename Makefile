@@ -33,12 +33,12 @@ deps: ## Verify module metadata and known vulnerabilities.
 	GOWORK=off go mod verify
 	GOWORK=off go mod tidy
 	git diff --exit-code -- go.mod go.sum
-	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 lint: ## Run vet and dead-code analysis.
 	GOWORK=off go vet ./...
 	@output_file="$$(mktemp)"; trap 'rm -f "$$output_file"' EXIT; \
-	if ! GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.48.0 -test ./... > "$$output_file"; then \
+	if ! GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.49.0 -test ./... > "$$output_file"; then \
 		cat "$$output_file"; exit 1; \
 	fi; \
 	if [ -s "$$output_file" ]; then cat "$$output_file"; exit 1; fi
