@@ -2,6 +2,10 @@
 
 ## 0.5.9 - Unreleased
 
+### Added
+
+- Add per-invocation `sync --verbose` diagnostics on stderr with phases, counts, API attempts, HTTP statuses, and retry delays while excluding private request data and upstream errors. Thanks @transitive-bullshit.
+
 ### Dependencies
 
 - Update Go to 1.27.0, SQLite to v1.57.0, indirect Go modules, vulnerability and dead-code tooling, and the stale and secret-scanning GitHub Actions.
