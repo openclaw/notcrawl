@@ -2,6 +2,10 @@
 
 ## 0.5.9 - Unreleased
 
+### Dependencies
+
+- Update Go to 1.27.0, SQLite to v1.57.0, indirect Go modules, vulnerability and dead-code tooling, and the stale and secret-scanning GitHub Actions.
+
 ### Fixed
 
 - Reject repeated Notion MCP `tools/list` cursors and cap discovery at 100 pages so a malformed pager cannot livelock sync.
