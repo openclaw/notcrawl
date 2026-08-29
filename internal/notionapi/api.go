@@ -21,6 +21,10 @@ const SourceName = "api"
 
 const maxAPIAttempts = 4
 
+// maxRetryAfter caps Retry-After waits. Notion may send delta-seconds or an
+// HTTP-date far in the future; CLI contexts often have no deadline.
+const maxRetryAfter = 60 * time.Second
+
 // defaultHTTPTimeout bounds Notion API requests when Client.HTTP is nil.
 // Callers may inject a custom client, including one with no overall timeout.
 const defaultHTTPTimeout = 60 * time.Second
@@ -757,23 +761,28 @@ func isReplaySafeRequest(method, path string) bool {
 }
 
 func retryAfter(header string, body []byte) time.Duration {
+	var wait time.Duration
 	if header != "" {
 		if seconds, err := time.ParseDuration(header + "s"); err == nil && seconds > 0 {
-			return seconds
-		}
-		if when, err := http.ParseTime(header); err == nil {
-			if wait := time.Until(when); wait > 0 {
-				return wait
+			wait = seconds
+		} else if when, err := http.ParseTime(header); err == nil {
+			if until := time.Until(when); until > 0 {
+				wait = until
 			}
 		}
 	}
-	var payload struct {
-		RetryAfter float64 `json:"retry_after"`
+	if wait == 0 {
+		var payload struct {
+			RetryAfter float64 `json:"retry_after"`
+		}
+		if err := json.Unmarshal(body, &payload); err == nil && payload.RetryAfter > 0 {
+			wait = time.Duration(payload.RetryAfter * float64(time.Second))
+		}
 	}
-	if err := json.Unmarshal(body, &payload); err == nil && payload.RetryAfter > 0 {
-		return time.Duration(payload.RetryAfter * float64(time.Second))
+	if wait > maxRetryAfter {
+		return maxRetryAfter
 	}
-	return 0
+	return wait
 }
 
 func waitBeforeRetry(ctx context.Context, wait time.Duration) error {

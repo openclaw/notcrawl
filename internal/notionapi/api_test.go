@@ -1067,6 +1067,21 @@ func TestNextListCursorRejectsRepeatedAndEmpty(t *testing.T) {
 	}
 }
 
+func TestRetryAfterCapsDeltaSeconds(t *testing.T) {
+	got := retryAfter("86400", nil)
+	if got != 60*time.Second {
+		t.Fatalf("retryAfter(86400) = %s, want 60s", got)
+	}
+}
+
+func TestRetryAfterCapsHTTPDate(t *testing.T) {
+	when := time.Now().Add(24 * time.Hour).UTC().Format(http.TimeFormat)
+	got := retryAfter(when, nil)
+	if got != 60*time.Second {
+		t.Fatalf("retryAfter(%q) = %s, want 60s", when, got)
+	}
+}
+
 type repeatingListCursorPager struct {
 	cursor string
 	calls  int
