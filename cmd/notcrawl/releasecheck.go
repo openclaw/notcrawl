@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	"time"
 
 	"github.com/openclaw/crawlkit/releasecheck"
 	"github.com/openclaw/notcrawl/internal/config"
@@ -22,6 +24,7 @@ func notcrawlReleaseCheckOptions(force bool) releasecheck.Options {
 		CurrentVersion: version,
 		CacheDir:       cfg.CacheDir,
 		Force:          force,
+		Client:         &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
