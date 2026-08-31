@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Bound the release-check HTTP client to a 5-second timeout so a stalled GitHub Releases host cannot pin the
+  background version notify. Thanks @SebTardif.
 - Reject repeated official API cursors without limiting healthy pagination or rewriting opaque cursor values. Thanks @SebTardif.
 - Reject repeated Notion MCP `tools/list` cursors and cap discovery at 100 pages so a malformed pager cannot livelock sync.
 
