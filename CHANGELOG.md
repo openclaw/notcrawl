@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Return gzip and output-file finalization errors before committing Git share snapshots. Thanks @SebTardif.
+- Return output-file close errors before reporting successful CSV/TSV database exports. Thanks @SebTardif.
 - Bound the release-check HTTP client to a 5-second timeout so a stalled GitHub Releases host cannot pin the
   background version notify. Thanks @SebTardif.
 - Reject repeated official API cursors without limiting healthy pagination or rewriting opaque cursor values. Thanks @SebTardif.
