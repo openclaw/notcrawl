@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -655,6 +656,62 @@ func TestExportDatabaseAllWritesFilesAndIndex(t *testing.T) {
 	}
 	if row := rowsByID["db2"]; row[1] != "Launch 🚀 Plan ✅\tQ3\nReview" || row[5] != "launch-plan-q3-review-db2.csv" {
 		t.Fatalf("escaped collection name did not round-trip: %#v", row)
+	}
+}
+
+type failOnCloseWriter struct {
+	io.WriteCloser
+	closeErr error
+}
+
+func (w failOnCloseWriter) Close() error {
+	_ = w.WriteCloser.Close()
+	return w.closeErr
+}
+
+func TestExportDatabaseOutputReturnsCloseError(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "notcrawl.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := store.NowMS()
+	if err := st.UpsertCollection(ctx, store.Collection{
+		ID: "db1", Name: "Roadmap", Source: "test", SyncedAt: now, SchemaJSON: `{"Name":{"type":"title"}}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, store.Page{
+		ID: "page1", CollectionID: "db1", Title: "Ship", URL: "https://example.com/ship", Alive: true, Source: "test", SyncedAt: now,
+		PropertiesJSON: `{"Name":{"type":"title","title":[{"plain_text":"Ship"}]}}`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := errors.New("disk full")
+	orig := createExportOutput
+	t.Cleanup(func() { createExportOutput = orig })
+	createExportOutput = func(name string) (io.WriteCloser, error) {
+		f, err := os.Create(name)
+		if err != nil {
+			return nil, err
+		}
+		return failOnCloseWriter{WriteCloser: f, closeErr: want}, nil
+	}
+
+	outputPath := filepath.Join(dir, "roadmap.csv")
+	var stdout, stderr bytes.Buffer
+	err = run(ctx, []string{"--config", filepath.Join(dir, "missing.toml"), "--db", dbPath, "export-db", "--database", "db1", "--output", outputPath}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected export-db --output close error")
+	}
+	if !errors.Is(err, want) && !strings.Contains(err.Error(), want.Error()) {
+		t.Fatalf("export-db --output error = %v", err)
 	}
 }
 

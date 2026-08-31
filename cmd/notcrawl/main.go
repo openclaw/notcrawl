@@ -652,6 +652,10 @@ func runDatabases(ctx context.Context, stdout io.Writer, cfg config.Config) erro
 	return nil
 }
 
+var createExportOutput = func(name string) (io.WriteCloser, error) {
+	return os.Create(name)
+}
+
 func runExportDatabase(ctx context.Context, stdout io.Writer, cfg config.Config, args []string) error {
 	fs := flag.NewFlagSet("export-db", flag.ContinueOnError)
 	databaseID := fs.String("database", "", "database id to export")
@@ -687,27 +691,33 @@ func runExportDatabase(ctx context.Context, stdout io.Writer, cfg config.Config,
 	}
 	defer st.Close()
 	var out io.Writer = stdout
-	var file *os.File
+	var file io.WriteCloser
+	outputName := ""
 	if *output != "" {
 		outputPath, err := config.ExpandPath(*output)
 		if err != nil {
 			return err
 		}
-		file, err = os.Create(outputPath)
+		file, err = createExportOutput(outputPath)
 		if err != nil {
 			return err
 		}
-		defer file.Close()
 		out = file
+		outputName = outputPath
 	}
-	s, err := tableexport.Exporter{Store: st}.Export(ctx, *databaseID, formatValue, out)
-	if err != nil {
-		return err
+	s, exportErr := tableexport.Exporter{Store: st}.Export(ctx, *databaseID, formatValue, out)
+	if file != nil {
+		closeErr := file.Close()
+		if exportErr != nil {
+			return exportErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		fmt.Fprintf(stdout, "exported %d rows and %d columns from %s to %s\n", s.Rows, s.Columns, s.Database, outputName)
+		return nil
 	}
-	if *output != "" {
-		fmt.Fprintf(stdout, "exported %d rows and %d columns from %s to %s\n", s.Rows, s.Columns, s.Database, file.Name())
-	}
-	return nil
+	return exportErr
 }
 
 func runExportAllDatabases(ctx context.Context, stdout io.Writer, cfg config.Config, format tableexport.Format, dir string) error {
