@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -462,27 +463,45 @@ func importAtRef(ctx context.Context, st *store.Store, opts mirror.Options, ref 
 	return imported, commit, err
 }
 
+var createExportFile = func(name string) (io.WriteCloser, error) {
+	return os.Create(name)
+}
+
 func exportTable(ctx context.Context, db *sql.DB, repoPath, table string) (TableManifest, error) {
 	path := filepath.ToSlash(filepath.Join("data", table+".jsonl.gz"))
 	full := filepath.Join(repoPath, path)
-	out, err := os.Create(full)
+	out, err := createExportFile(full)
 	if err != nil {
 		return TableManifest{}, err
 	}
-	defer out.Close()
 	gz := gzip.NewWriter(out)
-	defer gz.Close()
+	count, exportErr := encodeExportRows(ctx, db, table, gz)
+	gzErr := gz.Close()
+	fileErr := out.Close()
+	if exportErr != nil {
+		return TableManifest{}, exportErr
+	}
+	if gzErr != nil {
+		return TableManifest{}, gzErr
+	}
+	if fileErr != nil {
+		return TableManifest{}, fileErr
+	}
+	return TableManifest{Name: table, Path: path, Rows: count}, nil
+}
+
+func encodeExportRows(ctx context.Context, db *sql.DB, table string, w io.Writer) (int, error) {
 	rows, err := db.QueryContext(ctx, "select * from "+quoteIdent(table))
 	if err != nil {
-		return TableManifest{}, err
+		return 0, err
 	}
 	defer rows.Close()
 	cols, err := rows.Columns()
 	if err != nil {
-		return TableManifest{}, err
+		return 0, err
 	}
 	count := 0
-	enc := json.NewEncoder(gz)
+	enc := json.NewEncoder(w)
 	for rows.Next() {
 		values := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
@@ -490,21 +509,21 @@ func exportTable(ctx context.Context, db *sql.DB, repoPath, table string) (Table
 			ptrs[i] = &values[i]
 		}
 		if err := rows.Scan(ptrs...); err != nil {
-			return TableManifest{}, err
+			return 0, err
 		}
 		row := map[string]any{}
 		for i, col := range cols {
 			row[col] = exportValue(values[i])
 		}
 		if err := enc.Encode(row); err != nil {
-			return TableManifest{}, err
+			return 0, err
 		}
 		count++
 	}
 	if err := rows.Err(); err != nil {
-		return TableManifest{}, err
+		return 0, err
 	}
-	return TableManifest{Name: table, Path: path, Rows: count}, nil
+	return count, nil
 }
 
 type sqlExecer interface {

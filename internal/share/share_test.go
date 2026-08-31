@@ -3,6 +3,8 @@ package share
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -682,6 +684,83 @@ func TestPublishValidatesTagBeforeRemoteSync(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "invalid snapshot tag") {
 		t.Fatalf("Publish error = %v", err)
+	}
+}
+
+type failOnCloseWriter struct {
+	io.WriteCloser
+	closeErr error
+}
+
+func (w failOnCloseWriter) Close() error {
+	_ = w.WriteCloser.Close()
+	return w.closeErr
+}
+
+type failOnWriteCloser struct {
+	io.WriteCloser
+	writeErr error
+}
+
+func (w failOnWriteCloser) Write([]byte) (int, error) {
+	return 0, w.writeErr
+}
+
+func TestPublishReturnsExportCloseErrorWithoutCommitting(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		wrap func(io.WriteCloser, error) io.WriteCloser
+	}{
+		{"file close", errors.New("disk full"), func(inner io.WriteCloser, err error) io.WriteCloser {
+			return failOnCloseWriter{WriteCloser: inner, closeErr: err}
+		}},
+		{"gzip close", errors.New("gzip footer flush"), func(inner io.WriteCloser, err error) io.WriteCloser {
+			return failOnWriteCloser{WriteCloser: inner, writeErr: err}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := filepath.Join(t.TempDir(), "repo")
+			if err := os.MkdirAll(repo, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			runGitForTest(t, repo, "init", "-b", "main")
+			runGitForTest(t, repo,
+				"-c", "commit.gpgsign=false",
+				"-c", "user.name=test",
+				"-c", "user.email=test@example.invalid",
+				"commit", "--allow-empty", "-m", "seed",
+			)
+			src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
+			defer src.Close()
+
+			orig := createExportFile
+			t.Cleanup(func() { createExportFile = orig })
+			createExportFile = func(name string) (io.WriteCloser, error) {
+				f, err := os.Create(name)
+				if err != nil {
+					return nil, err
+				}
+				return tc.wrap(f, tc.err), nil
+			}
+
+			s, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir, Commit: true})
+			if err == nil {
+				t.Fatal("expected export close error")
+			}
+			if !errors.Is(err, tc.err) && !strings.Contains(err.Error(), tc.err.Error()) {
+				t.Fatalf("Publish error = %v", err)
+			}
+			if s.Committed {
+				t.Fatal("snapshot must not be committed after export close error")
+			}
+			log := gitOutputForTest(t, repo, "log", "--format=%s")
+			if strings.Contains(log, "archive: notcrawl snapshot") {
+				t.Fatalf("unexpected snapshot commit:\n%s", log)
+			}
+		})
 	}
 }
 
