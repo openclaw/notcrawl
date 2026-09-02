@@ -909,6 +909,71 @@ func TestDoDoesNotRetryTransportErrorForUnknownPost(t *testing.T) {
 	}
 }
 
+func oversizedJSONBody() string {
+	prefix := `{"object":"list","results":[],"pad":"`
+	suffix := `"}`
+	n := maxSuccessBodyBytes + 1 - len(prefix) - len(suffix)
+	return prefix + strings.Repeat("x", n) + suffix
+}
+
+func TestDoRejectsOversizedSuccessBody(t *testing.T) {
+	body := oversizedJSONBody()
+	if len(body) <= maxSuccessBodyBytes {
+		t.Fatalf("fixture length %d, want > %d", len(body), maxSuccessBodyBytes)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}))
+	defer server.Close()
+
+	var out map[string]any
+	err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret", HTTP: server.Client()}).do(context.Background(), http.MethodGet, "/users", nil, &out)
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected too large error, got %v", err)
+	}
+}
+
+func TestDoDoesNotRetryOversizedSuccessBody(t *testing.T) {
+	attempts := 0
+	body := oversizedJSONBody()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body)
+	}))
+	defer server.Close()
+
+	var out map[string]any
+	err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret", HTTP: server.Client()}).do(context.Background(), http.MethodGet, "/users", nil, &out)
+	if err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("expected too large error, got %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected one attempt for oversized body, got %d", attempts)
+	}
+}
+
+func TestDoUnmarshalsSmallSuccessBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"object":"list","results":[]}`))
+	}))
+	defer server.Close()
+
+	var out map[string]any
+	err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret", HTTP: server.Client()}).do(context.Background(), http.MethodGet, "/users", nil, &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["object"] != "list" {
+		t.Fatalf("unexpected body: %+v", out)
+	}
+}
+
 func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	defaultBaseURL    = "https://chatgpt.com/backend-api/wham/apps"
-	maxToolsListPages = 100
+	defaultBaseURL      = "https://chatgpt.com/backend-api/wham/apps"
+	maxToolsListPages   = 100
+	maxSuccessBodyBytes = 8 << 20
 )
 
 var (
@@ -786,7 +787,7 @@ func (g *gatewayClient) rpcCall(ctx context.Context, method string, params, out 
 		return fmt.Errorf("failed to call Codex apps gateway: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := readCappedSuccessBody(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read Codex apps gateway response: %w", err)
 	}
@@ -810,6 +811,17 @@ func (g *gatewayClient) rpcCall(ctx context.Context, method string, params, out 
 		return fmt.Errorf("failed to decode %s response: %w", method, err)
 	}
 	return nil
+}
+
+func readCappedSuccessBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, int64(maxSuccessBodyBytes)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxSuccessBodyBytes {
+		return nil, fmt.Errorf("response body too large")
+	}
+	return body, nil
 }
 
 func (g *gatewayClient) rpcNotify(ctx context.Context, method string, params any) error {
