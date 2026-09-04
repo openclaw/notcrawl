@@ -8,6 +8,7 @@
 
 ### Dependencies
 
+- Update Go to 1.27.1, SQLite to v1.58.0, terminal width handling to go-runewidth v0.0.29, and the TruffleHog secret-scanning action to v3.97.4.
 - Update CrawlKit to v0.14.8 so release checks time out after 30 seconds instead of hanging on an unresponsive server.
 - Update Go to 1.27.0, SQLite to v1.57.0, indirect Go modules, vulnerability and dead-code tooling, and the stale and secret-scanning GitHub Actions.
 

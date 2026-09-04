@@ -141,7 +141,7 @@ See [`SPEC.md`](SPEC.md) for the data model and archive contracts. Maintainers c
 
 ## Development
 
-Go 1.27.0 or newer is required.
+Go 1.27.1 or newer is required.
 
 ```sh
 make build
