@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.9 - Unreleased
+## 0.5.9 - 2026-09-05
 
 **Highlights:** Safer SQL inspection and clearer sync diagnostics.
 
