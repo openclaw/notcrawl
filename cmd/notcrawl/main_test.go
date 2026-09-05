@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -735,5 +736,160 @@ func TestExportDatabaseInvalidFormatDoesNotTruncateOutput(t *testing.T) {
 	}
 	if !bytes.Equal(got, original) {
 		t.Fatalf("invalid export truncated output: %q", string(got))
+	}
+}
+
+func seedSQLArchive(t *testing.T) (dbPath, configPath string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath = filepath.Join(dir, "notcrawl.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := store.NowMS()
+	if err := st.UpsertPage(ctx, store.Page{
+		ID: "page1", Title: "Launch Plan", Alive: true, Source: "test", SyncedAt: now, LastEditedTime: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dbPath, filepath.Join(dir, "missing.toml")
+}
+
+func archivePageCountAndUserVersion(t *testing.T, dbPath string) (pages, userVersion int) {
+	t.Helper()
+	st, err := store.OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.DB().QueryRow(`select count(*) from pages`).Scan(&pages); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DB().QueryRow(`pragma user_version`).Scan(&userVersion); err != nil {
+		t.Fatal(err)
+	}
+	return pages, userVersion
+}
+
+func TestSQLCommandRejectsMutatingQueries(t *testing.T) {
+	ctx := context.Background()
+	for _, query := range []string{
+		"SELECT 1; DELETE FROM pages",
+		"WITH x AS (SELECT 1) DELETE FROM pages",
+		"PRAGMA user_version=42",
+		"PRAGMA user_version(42)",
+		"WITH x(v) AS (SELECT 1) DELETE FROM pages RETURNING title",
+		"SELECT ';'; DELETE FROM pages",
+		"SELECT 1; /* comment */ DELETE FROM pages",
+		"PRAGMA query_only=off; DELETE FROM pages",
+		"PRAGMA query_only=off; ATTACH ':memory:' AS other; CREATE TABLE other.t(x)",
+	} {
+		t.Run(query, func(t *testing.T) {
+			dbPath, configPath := seedSQLArchive(t)
+			var stdout, stderr bytes.Buffer
+			err := run(ctx, []string{"--config", configPath, "--db", dbPath, "sql", query}, &stdout, &stderr)
+			if err == nil {
+				t.Fatalf("expected read-only rejection, got err=%v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+			}
+			pages, userVersion := archivePageCountAndUserVersion(t, dbPath)
+			if pages != 1 {
+				t.Fatalf("pages mutated: count=%d", pages)
+			}
+			if userVersion != 0 {
+				t.Fatalf("user_version mutated: %d", userVersion)
+			}
+		})
+	}
+}
+
+func TestSQLCommandAllowsReadQueries(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		query string
+		want  string
+	}{
+		{query: "SELECT title FROM pages", want: "Launch Plan"},
+		{query: "WITH x AS (SELECT title FROM pages) SELECT * FROM x", want: "Launch Plan"},
+		{query: "PRAGMA user_version", want: "0"},
+		{query: "PRAGMA table_info(pages)", want: "title"},
+		{query: "WITH x(v) AS (SELECT 1) SELECT v FROM x", want: "1"},
+		{query: "WITH RECURSIVE x(v) AS (SELECT 1 UNION ALL SELECT v+1 FROM x WHERE v<3) SELECT max(v) FROM x", want: "3"},
+		{query: "WITH x AS (SELECT ')') SELECT * FROM x", want: ")"},
+		{query: "SELECT ';' AS \"semi;colon\"", want: "semi;colon"},
+		{query: "SELECT 'it''s;quoted'", want: "it's;quoted"},
+		{query: "SELECT 1 AS [semi;colon]", want: "semi;colon"},
+		{query: "SELECT 1 AS `semi;colon`", want: "semi;colon"},
+		{query: "SELECT 1 /* ; */; -- trailing ; comment", want: "1"},
+		{query: "SELECT 1 -- ;\n; /* trailing */", want: "1"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			dbPath, configPath := seedSQLArchive(t)
+			var stdout, stderr bytes.Buffer
+			err := run(ctx, []string{"--config", configPath, "--db", dbPath, "sql", tc.query}, &stdout, &stderr)
+			if err != nil {
+				t.Fatalf("sql %q failed: %v\nstderr:\n%s", tc.query, err, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Fatalf("sql %q stdout missing %q:\n%s", tc.query, tc.want, stdout.String())
+			}
+			pages, userVersion := archivePageCountAndUserVersion(t, dbPath)
+			if pages != 1 || userVersion != 0 {
+				t.Fatalf("read query mutated archive: pages=%d user_version=%d", pages, userVersion)
+			}
+		})
+	}
+}
+
+func TestSQLCommandDoesNotCreateArchive(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "missing.db")
+	err := run(context.Background(), []string{"--config", filepath.Join(dir, "missing.toml"), "--db", dbPath, "sql", "SELECT 1"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "run sync first") {
+		t.Fatalf("expected archive preparation hint, got %v", err)
+	}
+	if _, err := os.Stat(dbPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("SQL created missing archive: %v", err)
+	}
+}
+
+func TestSQLCommandDoesNotMigrateLegacyArchive(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE pages (title TEXT); INSERT INTO pages VALUES ('Legacy page')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	args := []string{"--config", filepath.Join(dir, "missing.toml"), "--db", dbPath, "sql"}
+	if err := run(context.Background(), append(args, "SELECT title FROM pages"), &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Legacy page") {
+		t.Fatalf("missing legacy result: %s", stdout.String())
+	}
+	if err := run(context.Background(), append(args, "SELECT api_blocks_synced FROM pages"), io.Discard, io.Discard); err == nil {
+		t.Fatal("expected missing legacy column error")
+	}
+	after, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("SQL modified legacy archive")
 	}
 }

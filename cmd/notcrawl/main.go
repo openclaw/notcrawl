@@ -1309,12 +1309,12 @@ func runSQL(ctx context.Context, stdout io.Writer, cfg config.Config, args []str
 		return fmt.Errorf("sql query required")
 	}
 	query := strings.TrimSpace(strings.Join(parsed.Query, " "))
-	if !isReadOnlyQuery(query) {
+	if !isSQLInspectionQuery(query) {
 		return fmt.Errorf("only read-only select/with/pragma queries are allowed")
 	}
-	st, err := store.Open(cfg.DBPath)
+	st, err := store.OpenReadOnly(cfg.DBPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("open archive for read-only SQL (run sync first to create or upgrade an archive): %w", err)
 	}
 	defer st.Close()
 	rows, err := st.DB().QueryContext(ctx, query)
@@ -1538,9 +1538,65 @@ Writes a starter TOML config to --config or the standard notcrawl config path.
 `)
 }
 
-func isReadOnlyQuery(query string) bool {
+func isSQLInspectionQuery(query string) bool {
 	lower := strings.ToLower(strings.TrimSpace(query))
-	return strings.HasPrefix(lower, "select ") || strings.HasPrefix(lower, "with ") || strings.HasPrefix(lower, "pragma ")
+	if !strings.HasPrefix(lower, "select ") && !strings.HasPrefix(lower, "with ") && !strings.HasPrefix(lower, "pragma ") {
+		return false
+	}
+	// SQLite's mode=ro enforces archive safety. Limit input to one statement so
+	// it cannot disable query_only and then attach a writable database.
+	ended := false
+	for i := 0; i < len(query); i++ {
+		switch query[i] {
+		case 0:
+			return false
+		case ' ', '\t', '\r', '\n', '\f':
+			continue
+		case ';':
+			ended = true
+			continue
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				for i < len(query) && query[i] != '\n' {
+					i++
+				}
+				continue
+			}
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				end := strings.Index(query[i+2:], "*/")
+				if end < 0 {
+					return true // SQLite treats an unfinished block comment as EOF.
+				}
+				i += end + 3
+				continue
+			}
+		}
+		if ended {
+			return false
+		}
+		switch quote := query[i]; quote {
+		case '\'', '"', '`', '[':
+			closing := quote
+			if quote == '[' {
+				closing = ']'
+			}
+			for i++; ; i++ {
+				if i >= len(query) {
+					return false
+				}
+				if query[i] != closing {
+					continue
+				}
+				if quote != '[' && i+1 < len(query) && query[i+1] == closing {
+					i++
+					continue
+				}
+				break
+			}
+		}
+	}
+	return true
 }
 
 func printHelp(w io.Writer) {

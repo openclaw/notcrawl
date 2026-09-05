@@ -108,6 +108,8 @@ for common page, collection, comment, raw-record, and sync-state lookups.
 `report` must provide a SQL-free archive summary: total records, recent edited
 page/comment windows, top databases, top spaces, and recently edited pages.
 
+`sql` opens an existing archive read-only, without creating tables or migrating its schema. SQLite enforces write rejection; the CLI accepts only one SELECT, WITH, or PRAGMA statement so input cannot disable connection safeguards and execute further statements. Quoted strings, identifiers, and comments retain SQLite syntax. Run `sync` to initialize or upgrade an archive before querying newer fields.
+
 Core tables:
 
 - `spaces`
