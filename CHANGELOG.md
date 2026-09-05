@@ -2,26 +2,18 @@
 
 ## 0.5.9 - Unreleased
 
-### Added
-
-- Add per-invocation `sync --verbose` diagnostics on stderr with phases, counts, API attempts, HTTP statuses, and retry delays while excluding private request data and upstream errors. Thanks @transitive-bullshit.
-
-### Dependencies
-
-- Update CrawlKit to v0.14.9, including upstream snapshot-path validation and scheduler-history recovery fixes.
-- Update Go to 1.27.1, SQLite to v1.58.0, terminal width handling to go-runewidth v0.0.29, and the TruffleHog secret-scanning action to v3.97.4.
-- Update CrawlKit to v0.14.8 so release checks time out after 30 seconds instead of hanging on an unresponsive server.
-- Update Go to 1.27.0, SQLite to v1.57.0, indirect Go modules, vulnerability and dead-code tooling, and the stale and secret-scanning GitHub Actions.
-
-### Fixed
+**Highlights:** Safer SQL inspection and clearer sync diagnostics.
 
 - Enforce read-only SQL access without rejecting valid CTEs, quoted punctuation, or comments; leave archive creation and upgrades to sync. Thanks @SebTardif.
+- Add per-invocation `sync --verbose` diagnostics on stderr with phases, counts, API attempts, HTTP statuses, and retry delays while excluding private request data and upstream errors. Thanks @transitive-bullshit.
+- Bound official Notion API success responses to 8 MiB and fail oversized responses without retrying. Thanks @SebTardif.
 - Return gzip and output-file finalization errors before committing Git share snapshots. Thanks @SebTardif.
 - Return output-file close errors before reporting successful CSV/TSV database exports. Thanks @SebTardif.
-- Bound the release-check HTTP client to a 5-second timeout so a stalled GitHub Releases host cannot pin the
-  background version notify. Thanks @SebTardif.
 - Reject repeated official API cursors without limiting healthy pagination or rewriting opaque cursor values. Thanks @SebTardif.
 - Reject repeated Notion MCP `tools/list` cursors and cap discovery at 100 pages so a malformed pager cannot livelock sync.
+- Bound the release-check HTTP client to a 5-second timeout so a stalled GitHub Releases host cannot pin the background version notification. Thanks @SebTardif.
+- Update CrawlKit to v0.14.9, including upstream snapshot-path validation, scheduler-history recovery, and bounded release checks.
+- Update Go to 1.27.1, SQLite to v1.58.0, go-runewidth to v0.0.29, indirect Go modules, vulnerability and dead-code tooling, and the stale and secret-scanning GitHub Actions.
 
 ## v0.5.8 - 2026-08-14
 
