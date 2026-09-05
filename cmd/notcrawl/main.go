@@ -1312,7 +1312,7 @@ func runSQL(ctx context.Context, stdout io.Writer, cfg config.Config, args []str
 	if !isReadOnlyQuery(query) {
 		return fmt.Errorf("only read-only select/with/pragma queries are allowed")
 	}
-	st, err := store.Open(cfg.DBPath)
+	st, err := store.OpenReadOnly(cfg.DBPath)
 	if err != nil {
 		return err
 	}
@@ -1540,7 +1540,65 @@ Writes a starter TOML config to --config or the standard notcrawl config path.
 
 func isReadOnlyQuery(query string) bool {
 	lower := strings.ToLower(strings.TrimSpace(query))
-	return strings.HasPrefix(lower, "select ") || strings.HasPrefix(lower, "with ") || strings.HasPrefix(lower, "pragma ")
+	for strings.HasSuffix(lower, ";") {
+		lower = strings.TrimSpace(strings.TrimSuffix(lower, ";"))
+	}
+	if lower == "" || strings.Contains(lower, ";") {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(lower, "select "):
+		return true
+	case strings.HasPrefix(lower, "with "):
+		return withSelectsOnly(lower)
+	case strings.HasPrefix(lower, "pragma "):
+		return isReadOnlyPragma(lower)
+	default:
+		return false
+	}
+}
+
+func isReadOnlyPragma(lower string) bool {
+	if strings.Contains(lower, "=") {
+		return false
+	}
+	body := strings.TrimSpace(strings.TrimPrefix(lower, "pragma"))
+	name := body
+	if i := strings.IndexAny(body, " ("); i >= 0 {
+		name = body[:i]
+	}
+	switch strings.TrimSpace(name) {
+	case "", "optimize", "incremental_vacuum", "wal_checkpoint":
+		return false
+	default:
+		return true
+	}
+}
+
+func withSelectsOnly(lower string) bool {
+	depth := 0
+	seenParen := false
+	for i := 0; i < len(lower); i++ {
+		switch lower[i] {
+		case '(':
+			depth++
+			seenParen = true
+		case ')':
+			if depth == 0 {
+				return false
+			}
+			depth--
+			if seenParen && depth == 0 {
+				rest := strings.TrimSpace(lower[i+1:])
+				if strings.HasPrefix(rest, ",") {
+					seenParen = false
+					continue
+				}
+				return strings.HasPrefix(rest, "select ") || strings.HasPrefix(rest, "select(")
+			}
+		}
+	}
+	return false
 }
 
 func printHelp(w io.Writer) {

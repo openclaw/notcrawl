@@ -737,3 +737,93 @@ func TestExportDatabaseInvalidFormatDoesNotTruncateOutput(t *testing.T) {
 		t.Fatalf("invalid export truncated output: %q", string(got))
 	}
 }
+
+func seedSQLArchive(t *testing.T) (dbPath, configPath string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath = filepath.Join(dir, "notcrawl.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := store.NowMS()
+	if err := st.UpsertPage(ctx, store.Page{
+		ID: "page1", Title: "Launch Plan", Alive: true, Source: "test", SyncedAt: now, LastEditedTime: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dbPath, filepath.Join(dir, "missing.toml")
+}
+
+func archivePageCountAndUserVersion(t *testing.T, dbPath string) (pages, userVersion int) {
+	t.Helper()
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if err := st.DB().QueryRow(`select count(*) from pages`).Scan(&pages); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DB().QueryRow(`pragma user_version`).Scan(&userVersion); err != nil {
+		t.Fatal(err)
+	}
+	return pages, userVersion
+}
+
+func TestSQLCommandRejectsMutatingQueries(t *testing.T) {
+	ctx := context.Background()
+	for _, query := range []string{
+		"SELECT 1; DELETE FROM pages",
+		"WITH x AS (SELECT 1) DELETE FROM pages",
+		"PRAGMA user_version=42",
+	} {
+		t.Run(query, func(t *testing.T) {
+			dbPath, configPath := seedSQLArchive(t)
+			var stdout, stderr bytes.Buffer
+			err := run(ctx, []string{"--config", configPath, "--db", dbPath, "sql", query}, &stdout, &stderr)
+			if err == nil || !strings.Contains(err.Error(), "read-only") {
+				t.Fatalf("expected read-only rejection, got err=%v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+			}
+			pages, userVersion := archivePageCountAndUserVersion(t, dbPath)
+			if pages != 1 {
+				t.Fatalf("pages mutated: count=%d", pages)
+			}
+			if userVersion != 0 {
+				t.Fatalf("user_version mutated: %d", userVersion)
+			}
+		})
+	}
+}
+
+func TestSQLCommandAllowsReadQueries(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		query string
+		want  string
+	}{
+		{query: "SELECT title FROM pages", want: "Launch Plan"},
+		{query: "WITH x AS (SELECT title FROM pages) SELECT * FROM x", want: "Launch Plan"},
+		{query: "PRAGMA user_version", want: "0"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			dbPath, configPath := seedSQLArchive(t)
+			var stdout, stderr bytes.Buffer
+			err := run(ctx, []string{"--config", configPath, "--db", dbPath, "sql", tc.query}, &stdout, &stderr)
+			if err != nil {
+				t.Fatalf("sql %q failed: %v\nstderr:\n%s", tc.query, err, stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Fatalf("sql %q stdout missing %q:\n%s", tc.query, tc.want, stdout.String())
+			}
+			pages, userVersion := archivePageCountAndUserVersion(t, dbPath)
+			if pages != 1 || userVersion != 0 {
+				t.Fatalf("read query mutated archive: pages=%d user_version=%d", pages, userVersion)
+			}
+		})
+	}
+}
