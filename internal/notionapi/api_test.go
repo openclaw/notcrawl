@@ -974,6 +974,22 @@ func TestDoUnmarshalsSmallSuccessBody(t *testing.T) {
 	}
 }
 
+func TestDoAcceptsSuccessBodyAtLimit(t *testing.T) {
+	body := strings.Replace(oversizedJSONBody(), "x", "", 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	defer server.Close()
+	var out map[string]any
+	if err := (Client{BaseURL: server.URL, Token: "test-token", HTTP: server.Client()}).do(context.Background(), http.MethodGet, "/users", nil, &out); err != nil {
+		t.Fatalf("exactly %d bytes must be accepted: %v", len(body), err)
+	}
+	if out["object"] != "list" {
+		t.Fatalf("unexpected response object: %v", out["object"])
+	}
+}
+
 func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

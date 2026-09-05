@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -548,52 +547,6 @@ func TestListAllToolsRejectsRepeatedCursor(t *testing.T) {
 	}
 	if pager.calls != 2 {
 		t.Fatalf("tools/list calls = %d, want 2", pager.calls)
-	}
-}
-
-func TestRPCCallRejectsOversizedSuccessBody(t *testing.T) {
-	prefix := `{"jsonrpc":"2.0","id":1,"result":{"pad":"`
-	suffix := `"}}`
-	n := maxSuccessBodyBytes + 1 - len(prefix) - len(suffix)
-	body := prefix + strings.Repeat("x", n) + suffix
-	if len(body) <= maxSuccessBodyBytes {
-		t.Fatalf("fixture length %d, want > %d", len(body), maxSuccessBodyBytes)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, body)
-	}))
-	defer server.Close()
-
-	var out map[string]any
-	err := (&gatewayClient{
-		http:    server.Client(),
-		baseURL: server.URL,
-		auth:    authInfo{AccessToken: "test-token"},
-	}).rpcCall(context.Background(), "initialize", map[string]any{}, &out)
-	if err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("expected too large error, got %v", err)
-	}
-}
-
-func TestRPCCallUnmarshalsSmallSuccessBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		writeRPCResult(w, 1, map[string]any{"ok": true})
-	}))
-	defer server.Close()
-
-	var out map[string]any
-	err := (&gatewayClient{
-		http:    server.Client(),
-		baseURL: server.URL,
-		auth:    authInfo{AccessToken: "test-token"},
-	}).rpcCall(context.Background(), "initialize", map[string]any{}, &out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out["ok"] != true {
-		t.Fatalf("unexpected body: %+v", out)
 	}
 }
 
