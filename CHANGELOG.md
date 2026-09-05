@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Enforce read-only SQL access without rejecting valid CTEs, quoted punctuation, or comments; leave archive creation and upgrades to sync. Thanks @SebTardif.
 - Return gzip and output-file finalization errors before committing Git share snapshots. Thanks @SebTardif.
 - Return output-file close errors before reporting successful CSV/TSV database exports. Thanks @SebTardif.
 - Bound the release-check HTTP client to a 5-second timeout so a stalled GitHub Releases host cannot pin the

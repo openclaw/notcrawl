@@ -1309,12 +1309,12 @@ func runSQL(ctx context.Context, stdout io.Writer, cfg config.Config, args []str
 		return fmt.Errorf("sql query required")
 	}
 	query := strings.TrimSpace(strings.Join(parsed.Query, " "))
-	if !isReadOnlyQuery(query) {
+	if !isSQLInspectionQuery(query) {
 		return fmt.Errorf("only read-only select/with/pragma queries are allowed")
 	}
 	st, err := store.OpenReadOnly(cfg.DBPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("open archive for read-only SQL (run sync first to create or upgrade an archive): %w", err)
 	}
 	defer st.Close()
 	rows, err := st.DB().QueryContext(ctx, query)
@@ -1538,67 +1538,65 @@ Writes a starter TOML config to --config or the standard notcrawl config path.
 `)
 }
 
-func isReadOnlyQuery(query string) bool {
+func isSQLInspectionQuery(query string) bool {
 	lower := strings.ToLower(strings.TrimSpace(query))
-	for strings.HasSuffix(lower, ";") {
-		lower = strings.TrimSpace(strings.TrimSuffix(lower, ";"))
-	}
-	if lower == "" || strings.Contains(lower, ";") {
+	if !strings.HasPrefix(lower, "select ") && !strings.HasPrefix(lower, "with ") && !strings.HasPrefix(lower, "pragma ") {
 		return false
 	}
-	switch {
-	case strings.HasPrefix(lower, "select "):
-		return true
-	case strings.HasPrefix(lower, "with "):
-		return withSelectsOnly(lower)
-	case strings.HasPrefix(lower, "pragma "):
-		return isReadOnlyPragma(lower)
-	default:
-		return false
-	}
-}
-
-func isReadOnlyPragma(lower string) bool {
-	if strings.Contains(lower, "=") {
-		return false
-	}
-	body := strings.TrimSpace(strings.TrimPrefix(lower, "pragma"))
-	name := body
-	if i := strings.IndexAny(body, " ("); i >= 0 {
-		name = body[:i]
-	}
-	switch strings.TrimSpace(name) {
-	case "", "optimize", "incremental_vacuum", "wal_checkpoint":
-		return false
-	default:
-		return true
-	}
-}
-
-func withSelectsOnly(lower string) bool {
-	depth := 0
-	seenParen := false
-	for i := 0; i < len(lower); i++ {
-		switch lower[i] {
-		case '(':
-			depth++
-			seenParen = true
-		case ')':
-			if depth == 0 {
-				return false
+	// SQLite's mode=ro enforces archive safety. Limit input to one statement so
+	// it cannot disable query_only and then attach a writable database.
+	ended := false
+	for i := 0; i < len(query); i++ {
+		switch query[i] {
+		case 0:
+			return false
+		case ' ', '\t', '\r', '\n', '\f':
+			continue
+		case ';':
+			ended = true
+			continue
+		case '-':
+			if i+1 < len(query) && query[i+1] == '-' {
+				for i < len(query) && query[i] != '\n' {
+					i++
+				}
+				continue
 			}
-			depth--
-			if seenParen && depth == 0 {
-				rest := strings.TrimSpace(lower[i+1:])
-				if strings.HasPrefix(rest, ",") {
-					seenParen = false
+		case '/':
+			if i+1 < len(query) && query[i+1] == '*' {
+				end := strings.Index(query[i+2:], "*/")
+				if end < 0 {
+					return true // SQLite treats an unfinished block comment as EOF.
+				}
+				i += end + 3
+				continue
+			}
+		}
+		if ended {
+			return false
+		}
+		switch quote := query[i]; quote {
+		case '\'', '"', '`', '[':
+			closing := quote
+			if quote == '[' {
+				closing = ']'
+			}
+			for i++; ; i++ {
+				if i >= len(query) {
+					return false
+				}
+				if query[i] != closing {
 					continue
 				}
-				return strings.HasPrefix(rest, "select ") || strings.HasPrefix(rest, "select(")
+				if quote != '[' && i+1 < len(query) && query[i+1] == closing {
+					i++
+					continue
+				}
+				break
 			}
 		}
 	}
-	return false
+	return true
 }
 
 func printHelp(w io.Writer) {
