@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/alecthomas/kong v1.16.1
-	github.com/openclaw/crawlkit v0.14.8
+	github.com/openclaw/crawlkit v0.14.9
 	modernc.org/sqlite v1.58.0
 )
 
