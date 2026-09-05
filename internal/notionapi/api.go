@@ -21,6 +21,11 @@ const SourceName = "api"
 
 const maxAPIAttempts = 4
 
+// maxSuccessBodyBytes caps official Notion 2xx bodies. Error responses stay at 4 KiB.
+const maxSuccessBodyBytes = 8 << 20
+
+var errSuccessBodyTooLarge = errors.New("response body too large")
+
 // defaultHTTPTimeout bounds Notion API requests when Client.HTTP is nil.
 // Callers may inject a custom client, including one with no overall timeout.
 const defaultHTTPTimeout = 60 * time.Second
@@ -638,7 +643,7 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		}
 		c.traceRequest(path, "received", attempt, resp.StatusCode, started, 0)
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			responseBody, readErr := io.ReadAll(resp.Body)
+			responseBody, readErr := readCappedSuccessBody(resp.Body)
 			resp.Body.Close()
 			if readErr != nil {
 				c.traceRequest(path, "read_error", attempt, resp.StatusCode, started, 0)
@@ -674,6 +679,17 @@ func (c Client) do(ctx context.Context, method, path string, body any, out any) 
 		return apiErr
 	}
 	return nil
+}
+
+func readCappedSuccessBody(r io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, int64(maxSuccessBodyBytes)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxSuccessBodyBytes {
+		return nil, errSuccessBodyTooLarge
+	}
+	return body, nil
 }
 
 type notionAPIError struct {
@@ -738,7 +754,8 @@ func shouldRetryTransportError(ctx context.Context, method, path string, err err
 	}
 	return isReplaySafeRequest(method, path) &&
 		!errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded)
+		!errors.Is(err, context.DeadlineExceeded) &&
+		!errors.Is(err, errSuccessBodyTooLarge)
 }
 
 func isReplaySafeRequest(method, path string) bool {
