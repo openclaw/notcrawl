@@ -452,7 +452,7 @@ func runSync(ctx context.Context, stdout, stderr io.Writer, cfg config.Config, a
 	switch *source {
 	case "desktop":
 		trace.start("desktop")
-		s, err := notiondesktop.Ingest(ctx, st, cfg.Notion.Desktop.Path, cfg.CacheDir)
+		s, err := notiondesktop.Ingest(ctx, st, cfg.Notion.Desktop.Path, cfg.CacheDir, cfg.Notion.Desktop.SpaceIDs)
 		if err != nil {
 			return err
 		}
@@ -494,7 +494,7 @@ func runSync(ctx context.Context, stdout, stderr io.Writer, cfg config.Config, a
 	case "all":
 		if cfg.Notion.Desktop.Enabled {
 			trace.start("desktop")
-			s, err := notiondesktop.Ingest(ctx, st, cfg.Notion.Desktop.Path, cfg.CacheDir)
+			s, err := notiondesktop.Ingest(ctx, st, cfg.Notion.Desktop.Path, cfg.CacheDir, cfg.Notion.Desktop.SpaceIDs)
 			if err != nil {
 				return err
 			}

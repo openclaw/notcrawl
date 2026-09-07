@@ -4,8 +4,31 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestDesktopWorkspaceConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if _, err := WriteStarter(path); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || len(cfg.Notion.Desktop.SpaceIDs) != 0 {
+		t.Fatalf("starter must include all workspaces: %+v, %v", cfg.Notion.Desktop, err)
+	}
+	if err := os.WriteFile(path, []byte("[notion.desktop]\nspace_ids = ['workspace-a', 'workspace-b']\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(path)
+	if err != nil || len(cfg.Notion.Desktop.SpaceIDs) != 2 || cfg.Notion.Desktop.SpaceIDs[1] != "workspace-b" {
+		t.Fatalf("workspace allowlist not loaded: %+v, %v", cfg.Notion.Desktop, err)
+	}
+	cfg.Notion.Desktop.SpaceIDs = []string{" "}
+	if err := cfg.Resolve(); err == nil || !strings.Contains(err.Error(), "space_ids") {
+		t.Fatalf("blank workspace ID accepted: %v", err)
+	}
+}
 
 func TestDefaultUsesCurrentNotionAPIVersion(t *testing.T) {
 	cfg := Default()

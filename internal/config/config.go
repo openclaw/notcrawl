@@ -36,8 +36,9 @@ type NotionConfig struct {
 }
 
 type DesktopConfig struct {
-	Enabled bool   `toml:"enabled"`
-	Path    string `toml:"path"`
+	Enabled  bool     `toml:"enabled"`
+	Path     string   `toml:"path"`
+	SpaceIDs []string `toml:"space_ids"`
 }
 
 type APIConfig struct {
@@ -181,6 +182,11 @@ func defaultDesktopPath() string {
 }
 
 func (c *Config) Resolve() error {
+	for _, id := range c.Notion.Desktop.SpaceIDs {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("notion.desktop.space_ids must not contain empty IDs")
+		}
+	}
 	if strings.TrimSpace(c.Notion.Desktop.Path) == "" {
 		c.Notion.Desktop.Path = defaultDesktopPath()
 	}

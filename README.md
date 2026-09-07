@@ -125,6 +125,27 @@ Secrets are not included in Markdown or git share snapshots.
 
 See [`config.example.toml`](config.example.toml) for every setting.
 
+To limit future Desktop ingestion to selected workspaces, set `space_ids` under
+`[notion.desktop]` in your config:
+
+```toml
+[notion.desktop]
+enabled = true
+space_ids = ["01234567-89ab-cdef-0123-456789abcdef"]
+```
+
+An empty list (the default) includes all cached workspaces. IDs match regardless
+of case or UUID hyphens. Find known IDs with
+`notcrawl sql "SELECT id, name FROM spaces"` in an existing archive. The filter
+applies to `sync --source desktop`, `tap`, and the Desktop phase of `sync`.
+Rows without a workspace ID are skipped when a list is set.
+
+The list filters workspace content, not the complete archive: existing rows and
+their Markdown remain, shared user metadata is still imported, and cache
+snapshots still contain the complete local Notion database. API and MCP sync
+are unaffected. For a new Desktop-only archive, use separate `db_path`,
+`cache_dir`, and `markdown_dir` settings and disable the API and MCP sources.
+
 Interactive terminal runs check for a newer release once per day. `notcrawl check-update` checks immediately; set `NOTCRAWL_NO_UPDATE_CHECK=1` or `CRAWLKIT_NO_UPDATE_CHECK=1` to disable the passive check.
 
 ## Safety model

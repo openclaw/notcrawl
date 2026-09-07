@@ -5,6 +5,8 @@ markdown_dir = "~/.notcrawl/pages"
 [notion.desktop]
 enabled = true
 path = ""
+# Optional workspace allowlist for future Desktop ingestion; empty means all.
+space_ids = []
 
 [notion.api]
 enabled = true

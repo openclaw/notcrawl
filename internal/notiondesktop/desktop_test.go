@@ -96,7 +96,7 @@ func TestIngestBlocksDerivesUntitledPageFromChildText(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, _, _, err := ingestBlocks(ctx, st, src, 1); err != nil {
+	if _, _, _, err := ingestBlocks(ctx, st, src, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -147,7 +147,7 @@ func TestIngestBlocksPreservesRowsMissingFromLatestSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	if _, _, _, err := ingestBlocks(ctx, st, src, 1); err != nil {
+	if _, _, _, err := ingestBlocks(ctx, st, src, 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Archived API payload", Alive: false, Source: "api", SyncedAt: 9}); err != nil {
@@ -167,13 +167,13 @@ func TestIngestBlocksPreservesRowsMissingFromLatestSnapshot(t *testing.T) {
 	if err := st.UpsertBlock(ctx, store.Block{ID: "child3", PageID: "page3", ParentID: "page3", Type: "paragraph", Text: "API body", Alive: true, Source: "api", SyncedAt: 10}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := ingestBlocks(ctx, st, src, 2); err != nil {
+	if _, _, _, err := ingestBlocks(ctx, st, src, 2, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := src.ExecContext(ctx, `delete from block where id in ('child1', 'page2', 'page3', 'child3')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := ingestBlocks(ctx, st, src, 3); err != nil {
+	if _, _, _, err := ingestBlocks(ctx, st, src, 3, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -268,7 +268,7 @@ func TestIngestBlocksPreservesPreviousSnapshotWhenCacheQueryIsEmpty(t *testing.T
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Keep me", Alive: true, Source: SourceName, SyncedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := ingestBlocks(ctx, st, src, 2); err != nil {
+	if _, _, _, err := ingestBlocks(ctx, st, src, 2, nil); err != nil {
 		t.Fatal(err)
 	}
 	pages, err := st.Pages(ctx)
@@ -308,7 +308,7 @@ func TestIngestCommentsTreatsEmptyCacheAsNonAuthoritative(t *testing.T) {
 	if err := st.UpsertComment(ctx, store.Comment{ID: "comment1", PageID: "page1", Text: "Keep me", Alive: true, Source: SourceName, SyncedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	count, err := ingestComments(ctx, st, src, 2)
+	count, err := ingestComments(ctx, st, src, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

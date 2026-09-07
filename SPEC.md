@@ -63,6 +63,16 @@ Desktop sync must:
 Desktop cache coverage is opportunistic. It only includes what Notion has
 cached, downloaded, or recently touched locally.
 
+`notion.desktop.space_ids` optionally limits future Desktop ingestion to listed
+workspace IDs (case-insensitive, with or without UUID hyphens). An absent or
+empty list preserves all-workspace ingestion. The filter covers spaces, teams,
+collections, pages, blocks, raw block records, and comments, including explicit
+tombstones. With a nonempty list, records without a workspace ID are skipped.
+Excluded existing archive rows are retained unchanged, remain searchable, and
+remain eligible for Markdown export. Shared users and complete source snapshots
+are not filtered. API and MCP coverage is unchanged; this is not an archive
+cleanup or access-control feature.
+
 ### API Source
 
 API sync uses `NOTION_TOKEN` by default. It must:

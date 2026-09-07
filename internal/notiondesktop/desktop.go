@@ -51,7 +51,11 @@ func Inspect(path string) (Source, error) {
 	return Source{Path: path, Available: true, SizeBytes: info.Size()}, nil
 }
 
-func Ingest(ctx context.Context, st *store.Store, path, cacheDir string) (Summary, error) {
+func Ingest(ctx context.Context, st *store.Store, path, cacheDir string, spaceIDs []string) (Summary, error) {
+	scope := make(spaceScope, len(spaceIDs))
+	for _, id := range spaceIDs {
+		scope[normalizeSpaceID(id)] = true
+	}
 	source, err := Inspect(path)
 	if err != nil || !source.Available {
 		return Summary{Source: source}, err
@@ -70,22 +74,22 @@ func Ingest(ctx context.Context, st *store.Store, path, cacheDir string) (Summar
 	syncedAt := store.NowMS()
 	if err := st.WithTransaction(ctx, func() error {
 		return st.DeferPageFTS(ctx, func() error {
-			if s.Spaces, err = ingestSpaces(ctx, st, db); err != nil {
+			if s.Spaces, err = ingestSpaces(ctx, st, db, scope); err != nil {
 				return err
 			}
 			if s.Users, err = ingestUsers(ctx, st, db); err != nil {
 				return err
 			}
-			if s.Teams, err = ingestTeams(ctx, st, db); err != nil {
+			if s.Teams, err = ingestTeams(ctx, st, db, scope); err != nil {
 				return err
 			}
-			if s.Collections, err = ingestCollections(ctx, st, db); err != nil {
+			if s.Collections, err = ingestCollections(ctx, st, db, scope); err != nil {
 				return err
 			}
-			if s.Pages, s.Blocks, s.RawRecords, err = ingestBlocks(ctx, st, db, syncedAt); err != nil {
+			if s.Pages, s.Blocks, s.RawRecords, err = ingestBlocks(ctx, st, db, syncedAt, scope); err != nil {
 				return err
 			}
-			if s.Comments, err = ingestComments(ctx, st, db, syncedAt); err != nil {
+			if s.Comments, err = ingestComments(ctx, st, db, syncedAt, scope); err != nil {
 				return err
 			}
 			addedSpaces, err := st.EnsureSpaceFallbacks(ctx, SourceName)
@@ -170,7 +174,17 @@ func pruneDesktopSnapshots(cacheDir string, keep int, current string) error {
 	return nil
 }
 
-func ingestSpaces(ctx context.Context, st *store.Store, db *sql.DB) (int, error) {
+type spaceScope map[string]bool
+
+func normalizeSpaceID(id string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(id), "-", ""))
+}
+
+func (s spaceScope) includes(id string) bool {
+	return len(s) == 0 || (id != "" && s[normalizeSpaceID(id)])
+}
+
+func ingestSpaces(ctx context.Context, st *store.Store, db *sql.DB, scope spaceScope) (int, error) {
 	rows, err := db.QueryContext(ctx, `select id, coalesce(name, ''), coalesce(json_object(
 		'id', id, 'name', name, 'pages', pages, 'settings', settings, 'created_time', created_time, 'last_edited_time', last_edited_time
 	), '{}') from space`)
@@ -183,6 +197,9 @@ func ingestSpaces(ctx context.Context, st *store.Store, db *sql.DB) (int, error)
 		var id, name, raw string
 		if err := rows.Scan(&id, &name, &raw); err != nil {
 			return n, err
+		}
+		if !scope.includes(id) {
+			continue
 		}
 		if name == "" {
 			name = id
@@ -217,8 +234,8 @@ func ingestUsers(ctx context.Context, st *store.Store, db *sql.DB) (int, error) 
 	return n, rows.Err()
 }
 
-func ingestTeams(ctx context.Context, st *store.Store, db *sql.DB) (int, error) {
-	rows, err := db.QueryContext(ctx, `select id, space_id, parent_id, parent_table, coalesce(name, ''),
+func ingestTeams(ctx context.Context, st *store.Store, db *sql.DB, scope spaceScope) (int, error) {
+	rows, err := db.QueryContext(ctx, `select id, coalesce(space_id, ''), parent_id, parent_table, coalesce(name, ''),
 		coalesce(json_object('id', id, 'space_id', space_id, 'parent_id', parent_id, 'parent_table', parent_table,
 			'name', name, 'description', description, 'team_pages', team_pages, 'settings', settings), '{}')
 		from team where coalesce(archived_at, 0) = 0`)
@@ -231,6 +248,9 @@ func ingestTeams(ctx context.Context, st *store.Store, db *sql.DB) (int, error) 
 		var x store.Team
 		if err := rows.Scan(&x.ID, &x.SpaceID, &x.ParentID, &x.ParentTable, &x.Name, &x.RawJSON); err != nil {
 			return n, err
+		}
+		if !scope.includes(x.SpaceID) {
+			continue
 		}
 		if x.Name == "" {
 			x.Name = x.ID
@@ -245,8 +265,8 @@ func ingestTeams(ctx context.Context, st *store.Store, db *sql.DB) (int, error) 
 	return n, rows.Err()
 }
 
-func ingestCollections(ctx context.Context, st *store.Store, db *sql.DB) (int, error) {
-	rows, err := db.QueryContext(ctx, `select id, space_id, parent_id, parent_table, coalesce(name, ''), coalesce(schema, ''), coalesce(format, ''),
+func ingestCollections(ctx context.Context, st *store.Store, db *sql.DB, scope spaceScope) (int, error) {
+	rows, err := db.QueryContext(ctx, `select id, coalesce(space_id, ''), parent_id, parent_table, coalesce(name, ''), coalesce(schema, ''), coalesce(format, ''),
 		coalesce(json_object('id', id, 'space_id', space_id, 'parent_id', parent_id, 'parent_table', parent_table,
 			'name', name, 'schema', schema, 'format', format), '{}')
 		from collection where alive = 1`)
@@ -259,6 +279,9 @@ func ingestCollections(ctx context.Context, st *store.Store, db *sql.DB) (int, e
 		var x store.Collection
 		if err := rows.Scan(&x.ID, &x.SpaceID, &x.ParentID, &x.ParentTable, &x.Name, &x.SchemaJSON, &x.FormatJSON, &x.RawJSON); err != nil {
 			return n, err
+		}
+		if !scope.includes(x.SpaceID) {
+			continue
 		}
 		x.Name = notiontext.TitleFromProperties(x.Name)
 		if x.Name == "" {
@@ -291,8 +314,8 @@ type localBlock struct {
 	Text           string
 }
 
-func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int64) (pages int, blocks int, rawRecords int, err error) {
-	rows, err := db.QueryContext(ctx, `select id, space_id, type, coalesce(properties, ''), coalesce(content, ''),
+func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int64, scope spaceScope) (pages int, blocks int, rawRecords int, err error) {
+	rows, err := db.QueryContext(ctx, `select id, coalesce(space_id, ''), type, coalesce(properties, ''), coalesce(content, ''),
 		coalesce(collection_id, ''), coalesce(cast(created_time as integer), 0), coalesce(cast(last_edited_time as integer), 0),
 		coalesce(parent_id, ''), coalesce(parent_table, ''), alive, coalesce(format, ''),
 		coalesce(json_object('id', id, 'space_id', space_id, 'type', type, 'properties', properties, 'content', content,
@@ -311,6 +334,9 @@ func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int
 		if err := rows.Scan(&b.ID, &b.SpaceID, &b.Type, &b.PropertiesJSON, &b.ContentJSON, &b.CollectionID, &b.CreatedTime,
 			&b.LastEditedTime, &b.ParentID, &b.ParentTable, &alive, &b.FormatJSON, &b.RawJSON); err != nil {
 			return pages, blocks, rawRecords, err
+		}
+		if !scope.includes(b.SpaceID) {
+			continue
 		}
 		b.Alive = alive != 0
 		b.Text = blockText(b.PropertiesJSON)
@@ -462,8 +488,8 @@ func blockText(raw string) string {
 	return notiontext.PlainFromJSON(raw)
 }
 
-func ingestComments(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int64) (int, error) {
-	rows, err := db.QueryContext(ctx, `select id, parent_id, space_id, coalesce(text, ''), coalesce(created_by_id, ''),
+func ingestComments(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int64, scope spaceScope) (int, error) {
+	rows, err := db.QueryContext(ctx, `select id, parent_id, coalesce(space_id, ''), coalesce(text, ''), coalesce(created_by_id, ''),
 		coalesce(cast(created_time as integer), 0), coalesce(cast(last_edited_time as integer), 0), alive,
 		coalesce(json_object('id', id, 'parent_id', parent_id, 'space_id', space_id, 'text', text, 'content', content,
 			'created_by_id', created_by_id, 'created_time', created_time, 'last_edited_time', last_edited_time, 'alive', alive), '{}')
@@ -481,6 +507,9 @@ func ingestComments(ctx context.Context, st *store.Store, db *sql.DB, syncedAt i
 		var alive int
 		if err := rows.Scan(&c.ID, &c.ParentID, &c.SpaceID, &c.Text, &c.CreatedByID, &c.CreatedTime, &c.LastEditedTime, &alive, &c.RawJSON); err != nil {
 			return n, err
+		}
+		if !scope.includes(c.SpaceID) {
+			continue
 		}
 		c.PageID = c.ParentID
 		c.Text = notiontext.PlainFromJSON(c.Text)
