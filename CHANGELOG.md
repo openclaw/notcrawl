@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**Highlights:** Choose which workspaces Desktop sync adds to your archive.
+
+- Add opt-in `notion.desktop.space_ids` selection for Desktop sync and `tap`, retaining existing archive content and all-workspace defaults. Thanks @transitive-bullshit.
+- Update SQLite's supporting `modernc.org/libc` dependency to v1.75.7.
+
 ## 0.5.9 - 2026-09-05
 
 **Highlights:** Safer SQL inspection and clearer sync diagnostics.
