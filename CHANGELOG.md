@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.6.0 - 2026-09-07
 
 **Highlights:** Choose which workspaces Desktop sync adds to your archive.
