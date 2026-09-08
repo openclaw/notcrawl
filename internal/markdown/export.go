@@ -110,7 +110,8 @@ func (e Exporter) writePage(ctx context.Context, paths pathResolver, page store.
 		return "", store.BlockCoverage{}, err
 	}
 	projected, err := notiontext.ExportFields(map[string]string{
-		"url": page.URL, "title": page.Title, "icon": page.Icon, "cover": page.Cover,
+		"source": page.Source,
+		"url":    page.URL, "title": page.Title, "icon": page.Icon, "cover": page.Cover,
 		"properties_json": page.PropertiesJSON, "raw_json": page.RawJSON,
 	})
 	if err != nil {
@@ -121,7 +122,8 @@ func (e Exporter) writePage(ctx context.Context, paths pathResolver, page store.
 	page.PropertiesJSON, page.RawJSON = projected["properties_json"], projected["raw_json"]
 	for i := range blocks {
 		projected, err := notiontext.ExportFields(map[string]string{
-			"text": blocks[i].Text, "properties_json": blocks[i].PropertiesJSON,
+			"source": blocks[i].Source,
+			"text":   blocks[i].Text, "properties_json": blocks[i].PropertiesJSON,
 			"raw_json": blocks[i].RawJSON, "content_json": blocks[i].ContentJSON,
 			"format_json": blocks[i].FormatJSON,
 		})
@@ -131,7 +133,7 @@ func (e Exporter) writePage(ctx context.Context, paths pathResolver, page store.
 		blocks[i].Text, blocks[i].PropertiesJSON = projected["text"], projected["properties_json"]
 	}
 	for i := range comments {
-		projected, err := notiontext.ExportFields(map[string]string{"text": comments[i].Text, "raw_json": comments[i].RawJSON})
+		projected, err := notiontext.ExportFields(map[string]string{"source": comments[i].Source, "text": comments[i].Text, "raw_json": comments[i].RawJSON})
 		if err != nil {
 			return "", store.BlockCoverage{}, err
 		}

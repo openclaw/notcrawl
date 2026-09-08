@@ -38,25 +38,51 @@ func ExportFields(fields map[string]string) (map[string]string, error) {
 		case string:
 			field := strings.ReplaceAll(strings.ToLower(key), "_", "")
 			switch field {
-			case "rawjson", "propertiesjson", "contentjson", "formatjson", "payloadjson":
+			case "rawjson", "propertiesjson", "contentjson", "formatjson", "schemajson", "payloadjson":
 				if !storageFields {
 					break
 				}
 				if strings.TrimSpace(v) == "" {
 					return v, nil
 				}
-				dec := json.NewDecoder(strings.NewReader(v))
-				dec.UseNumber()
-				var nested any
-				if err := dec.Decode(&nested); err != nil {
-					return nil, errors.New("cannot sanitize malformed provider JSON for export")
+				nested, err := decodeExportJSON(v)
+				if err != nil {
+					return nil, err
 				}
-				if err := dec.Decode(new(any)); err != io.EOF {
-					return nil, errors.New("cannot sanitize trailing provider JSON for export")
+				if field == "rawjson" && fields["source"] == "desktop" {
+					if envelope, ok := nested.(map[string]any); ok {
+						// Desktop's SQLite json_object envelopes retain TEXT JSON
+						// columns as strings. Only those known outer shapes qualify.
+						for _, column := range desktopEnvelopeJSONFields(envelope) {
+							if envelope[column] == nil {
+								continue
+							}
+							raw, ok := envelope[column].(string)
+							if !ok {
+								return nil, errors.New("cannot sanitize invalid Desktop JSON column for export")
+							}
+							if strings.TrimSpace(raw) == "" {
+								continue
+							}
+							content, err := decodeExportJSON(raw)
+							if err != nil {
+								return nil, err
+							}
+							content, err = visit(content, "", false)
+							if err != nil {
+								return nil, err
+							}
+							encoded, err := json.Marshal(content)
+							if err != nil {
+								return nil, err
+							}
+							envelope[column] = string(encoded)
+						}
+					}
 				}
 				// Only source fallback payloads wrap storage columns. Provider
 				// objects can contain arbitrary user property names.
-				nested, err := visit(nested, "", field == "payloadjson")
+				nested, err = visit(nested, "", field == "payloadjson")
 				if err != nil {
 					return nil, err
 				}
@@ -109,6 +135,51 @@ func ExportFields(fields map[string]string) (map[string]string, error) {
 		}
 	}
 	return projected, nil
+}
+
+func decodeExportJSON(raw string) (any, error) {
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.UseNumber()
+	var value any
+	if err := dec.Decode(&value); err != nil {
+		return nil, errors.New("cannot sanitize malformed provider JSON for export")
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return nil, errors.New("cannot sanitize trailing provider JSON for export")
+	}
+	return value, nil
+}
+
+func desktopEnvelopeJSONFields(envelope map[string]any) []string {
+	if id, ok := envelope["id"].(string); !ok || id == "" {
+		return nil
+	}
+	// Match the complete column lists emitted by notiondesktop ingestion, not
+	// arbitrary provider objects or user properties named "format"/"content".
+	for _, shape := range []struct {
+		keys    string
+		columns []string
+	}{
+		{"id space_id type properties content collection_id created_time last_edited_time parent_id parent_table alive format", []string{"properties", "content", "format"}},
+		{"id space_id parent_id parent_table name schema format", []string{"schema", "format"}},
+		{"id parent_id space_id text content created_by_id created_time last_edited_time alive", []string{"content"}},
+	} {
+		keys := strings.Fields(shape.keys)
+		if len(envelope) != len(keys) {
+			continue
+		}
+		matches := true
+		for _, key := range keys {
+			if _, ok := envelope[key]; !ok {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return shape.columns
+		}
+	}
+	return nil
 }
 
 func exportFileURL(raw string) (string, error) {
