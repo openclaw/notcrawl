@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Document fail-closed export errors for malformed protected JSON, private read-only diagnosis, separate-path recovery limits, and partial or stale output after failure.
 - Sanitize signed file URLs inside known Desktop raw JSON envelopes and fallback copies during export, including existing archives, without changing local recovery bytes or exact numeric values.
 - Remove structured signed-file URL credentials from outgoing shares and Markdown without changing local raw recovery payloads or ordinary link parameters.
 - Commit API content batches and their search index together, retaining searchable progress when a later request fails.
