@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Remove structured signed-file URL credentials from outgoing shares and Markdown without changing local raw recovery payloads or ordinary link parameters.
+- Commit API content batches and their search index together, retaining searchable progress when a later request fails.
+- Reject incomplete API continuation metadata without retiring unseen blocks or marking page coverage complete.
+- Preserve completed API and Desktop todo checkboxes in Markdown exports.
+
 ## 0.6.0 - 2026-09-07
 
 **Highlights:** Choose which workspaces Desktop sync adds to your archive.

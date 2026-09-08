@@ -109,6 +109,34 @@ func (e Exporter) writePage(ctx context.Context, paths pathResolver, page store.
 	if err != nil {
 		return "", store.BlockCoverage{}, err
 	}
+	projected, err := notiontext.ExportFields(map[string]string{
+		"url": page.URL, "title": page.Title, "icon": page.Icon, "cover": page.Cover,
+		"properties_json": page.PropertiesJSON, "raw_json": page.RawJSON,
+	})
+	if err != nil {
+		return "", store.BlockCoverage{}, err
+	}
+	page.URL, page.Title = projected["url"], projected["title"]
+	page.Icon, page.Cover = projected["icon"], projected["cover"]
+	page.PropertiesJSON, page.RawJSON = projected["properties_json"], projected["raw_json"]
+	for i := range blocks {
+		projected, err := notiontext.ExportFields(map[string]string{
+			"text": blocks[i].Text, "properties_json": blocks[i].PropertiesJSON,
+			"raw_json": blocks[i].RawJSON, "content_json": blocks[i].ContentJSON,
+			"format_json": blocks[i].FormatJSON,
+		})
+		if err != nil {
+			return "", store.BlockCoverage{}, err
+		}
+		blocks[i].Text, blocks[i].PropertiesJSON = projected["text"], projected["properties_json"]
+	}
+	for i := range comments {
+		projected, err := notiontext.ExportFields(map[string]string{"text": comments[i].Text, "raw_json": comments[i].RawJSON})
+		if err != nil {
+			return "", store.BlockCoverage{}, err
+		}
+		comments[i].Text = projected["text"]
+	}
 	spaceSlug := notiontext.Slug(spaceName)
 	titleSlug := maxSlug(notiontext.Slug(page.Title), 96)
 	name := fmt.Sprintf("%s-%s.md", titleSlug, notiontext.ShortID(page.ID))
@@ -491,7 +519,11 @@ func renderBlock(b *strings.Builder, block store.Block, depth int) {
 	case "numbered_list", "numbered_list_item":
 		writeLine(b, indent+"1. "+fallback(text, block.Type))
 	case "to_do", "to_do_item":
-		writeLine(b, indent+"- [ ] "+fallback(text, block.Type))
+		mark := " "
+		if todoChecked(block) {
+			mark = "x"
+		}
+		writeLine(b, indent+"- ["+mark+"] "+fallback(text, block.Type))
 	case "quote":
 		writeLine(b, "> "+fallback(text, block.Type))
 	case "code":
@@ -513,6 +545,24 @@ func renderBlock(b *strings.Builder, block store.Block, depth int) {
 			writeLine(b, fmt.Sprintf("[%s]", block.Type))
 		}
 	}
+}
+
+func todoChecked(block store.Block) bool {
+	var properties map[string]json.RawMessage
+	if json.Unmarshal([]byte(block.PropertiesJSON), &properties) != nil {
+		return false
+	}
+	var checked bool
+	if json.Unmarshal(properties["checked"], &checked) == nil {
+		return checked
+	}
+	if block.Source == store.SourceDesktop {
+		var value [][]string
+		if json.Unmarshal(properties["checked"], &value) == nil && len(value) > 0 && len(value[0]) > 0 {
+			return value[0][0] == "Yes"
+		}
+	}
+	return false
 }
 
 func writeLine(b *strings.Builder, line string) {

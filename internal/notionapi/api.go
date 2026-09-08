@@ -71,7 +71,7 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 	}
 	c.HTTP = httpClientOrDefault(c.HTTP)
 	var s Summary
-	if err := st.DeferPageFTS(ctx, func() error {
+	if err := func() error {
 		started := time.Now()
 		c.tracePhase("users", "started", started)
 		users, err := c.listUsers(ctx)
@@ -143,7 +143,7 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 			return err
 		}
 		return nil
-	}); err != nil {
+	}(); err != nil {
 		return s, err
 	}
 	return s, nil
@@ -178,7 +178,7 @@ func nextListCursor(resp obj, seen map[string]bool, op string) (string, bool, er
 	}
 	cursor, _ := resp["next_cursor"].(string)
 	if cursor == "" {
-		return "", false, nil
+		return "", false, fmt.Errorf("%s has_more without a nonempty string next_cursor", op)
 	}
 	// Cursors are opaque. Compare exact values without limiting healthy listings.
 	if seen[cursor] {
@@ -295,21 +295,28 @@ func (c Client) ingestPage(ctx context.Context, st *store.Store, page obj, opts 
 	if p.Title == "" {
 		p.Title = "Untitled"
 	}
-	if opts.FetchBlocks {
-		if err := st.ClearSyncState(ctx, SourceName, "page_blocks", p.ID); err != nil {
-			return 0, 0, nil, err
+	if err := writePageBatch(ctx, st, func() error {
+		if opts.FetchBlocks {
+			if err := st.ClearSyncState(ctx, SourceName, "page_blocks", p.ID); err != nil {
+				return err
+			}
 		}
-	}
-	if err := st.UpsertPage(ctx, p); err != nil {
+		if err := st.UpsertPage(ctx, p); err != nil {
+			return err
+		}
+		if !p.Alive {
+			if _, err := st.RetireSourcePageBlocks(ctx, SourceName, p.ID); err != nil {
+				return err
+			}
+			if _, err := st.RetireSourcePageComments(ctx, SourceName, p.ID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return 0, 0, nil, err
 	}
 	if !p.Alive {
-		if _, err := st.RetireSourcePageBlocks(ctx, SourceName, p.ID); err != nil {
-			return 0, 0, nil, err
-		}
-		if _, err := st.RetireSourcePageComments(ctx, SourceName, p.ID); err != nil {
-			return 0, 0, nil, err
-		}
 		return 0, 0, nil, nil
 	}
 	var blocks, comments int
@@ -320,17 +327,6 @@ func (c Client) ingestPage(ctx context.Context, st *store.Store, page obj, opts 
 			return 0, 0, nil, err
 		}
 		warnings = append(warnings, blockWarnings...)
-		// Only mark this page's block sync complete when every children batch
-		// was fetched; a skipped batch (e.g. an unsupported block type) must
-		// leave it unmarked so notion-mcp's automatic repair pass (see
-		// automaticCandidates in internal/notionmcp/client.go, which treats an
-		// unset api/page_blocks "complete" state as a repair candidate) keeps
-		// retrying it instead of the gap going untracked.
-		if len(blockWarnings) == 0 {
-			if err := st.SetSyncState(ctx, SourceName, "page_blocks", p.ID, "complete"); err != nil {
-				return 0, 0, nil, err
-			}
-		}
 	}
 	if opts.FetchComments {
 		comments, err = c.ingestComments(ctx, st, p.ID, p.SpaceID)
@@ -454,11 +450,24 @@ func (c Client) walkBlocks(ctx context.Context, st *store.Store, pageID, parentI
 	// re-fetch — otherwise a page that previously synced cleanly loses its
 	// existing content the moment it gains one unfetchable block.
 	if len(warnings) == 0 {
-		if _, err := st.RetireSourcePageBlocksNotSyncedAt(ctx, SourceName, pageID, syncedAt); err != nil {
+		if err := writePageBatch(ctx, st, func() error {
+			if _, err := st.RetireSourcePageBlocksNotSyncedAt(ctx, SourceName, pageID, syncedAt); err != nil {
+				return err
+			}
+			return st.SetSyncState(ctx, SourceName, "page_blocks", pageID, "complete")
+		}); err != nil {
 			return count, warnings, err
 		}
 	}
 	return count, warnings, nil
+}
+
+// Each committed API batch includes its search projection; network requests
+// and recursive traversal must remain outside this transaction.
+func writePageBatch(ctx context.Context, st *store.Store, write func() error) error {
+	return st.WithTransaction(ctx, func() error {
+		return st.DeferPageFTS(ctx, write)
+	})
 }
 
 func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, parentID, spaceID string, syncedAt int64) (int, []string, error) {
@@ -481,6 +490,8 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 			}
 			return count, warnings, err
 		}
+		var batch []store.Block
+		var children []string
 		for _, item := range asSlice(resp["results"]) {
 			m, ok := item.(map[string]any)
 			if !ok {
@@ -492,7 +503,7 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 			text := notiontext.Plain(typeBody)
 			raw := notiontext.MarshalRaw(block)
 			displayOrder++
-			if err := st.UpsertBlock(ctx, store.Block{
+			batch = append(batch, store.Block{
 				ID:             block.string("id"),
 				PageID:         pageID,
 				SpaceID:        spaceID,
@@ -508,18 +519,29 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 				Source:         SourceName,
 				RawJSON:        raw,
 				SyncedAt:       syncedAt,
-			}); err != nil {
+			})
+			if shouldFetchBlockChildren(block) {
+				children = append(children, block.string("id"))
+			}
+		}
+		if err := writePageBatch(ctx, st, func() error {
+			for _, block := range batch {
+				if err := st.UpsertBlock(ctx, block); err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return count, warnings, err
+		}
+		count += len(batch)
+		for _, childID := range children {
+			n, childWarnings, err := c.walkBlocksAt(ctx, st, pageID, childID, spaceID, syncedAt)
+			warnings = append(warnings, childWarnings...)
+			if err != nil {
 				return count, warnings, err
 			}
-			count++
-			if shouldFetchBlockChildren(block) {
-				n, childWarnings, err := c.walkBlocksAt(ctx, st, pageID, block.string("id"), spaceID, syncedAt)
-				warnings = append(warnings, childWarnings...)
-				if err != nil {
-					return count, warnings, err
-				}
-				count += n
-			}
+			count += n
 		}
 		next, more, err := nextListCursor(resp, seen, "Notion block children")
 		if err != nil {

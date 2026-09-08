@@ -1139,7 +1139,7 @@ func TestNextListCursorRejectsRepeatedAndEmpty(t *testing.T) {
 		t.Fatalf("repeated: more=%v err=%v", more, err)
 	}
 	next, more, err = nextListCursor(obj{"has_more": true, "next_cursor": ""}, seen, "Notion users/list")
-	if err != nil || more || next != "" {
+	if err == nil || more || next != "" {
 		t.Fatalf("empty cursor: next=%q more=%v err=%v", next, more, err)
 	}
 	next, more, err = nextListCursor(obj{"has_more": false, "next_cursor": "abc"}, seen, "Notion users/list")

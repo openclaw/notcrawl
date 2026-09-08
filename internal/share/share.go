@@ -17,6 +17,7 @@ import (
 
 	"github.com/openclaw/crawlkit/mirror"
 	cksnapshot "github.com/openclaw/crawlkit/snapshot"
+	"github.com/openclaw/notcrawl/internal/notiontext"
 	"github.com/openclaw/notcrawl/internal/store"
 )
 
@@ -514,6 +515,19 @@ func encodeExportRows(ctx context.Context, db *sql.DB, table string, w io.Writer
 		row := map[string]any{}
 		for i, col := range cols {
 			row[col] = exportValue(values[i])
+		}
+		fields := map[string]string{}
+		for key, value := range row {
+			if text, ok := value.(string); ok {
+				fields[key] = text
+			}
+		}
+		projected, err := notiontext.ExportFields(fields)
+		if err != nil {
+			return 0, err
+		}
+		for key, value := range projected {
+			row[key] = value
 		}
 		if err := enc.Encode(row); err != nil {
 			return 0, err
