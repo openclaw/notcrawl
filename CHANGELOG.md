@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.6.1 - 2026-09-11
 
 **Highlights:** More reliable archive sharing and searchable progress after interrupted syncs.
