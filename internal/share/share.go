@@ -1007,6 +1007,16 @@ func commitGenerated(ctx context.Context, repoPath, message string) (bool, error
 	if message == "" {
 		message = "archive: notcrawl snapshot"
 	}
+	// Git cannot commit an empty directory pathspec. Keep pages addressable
+	// even before the first page, or after the last generated page is removed.
+	marker, err := os.OpenFile(filepath.Join(repoPath, "pages", ".gitkeep"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err == nil {
+		if err := marker.Close(); err != nil {
+			return false, err
+		}
+	} else if !errors.Is(err, os.ErrExist) {
+		return false, err
+	}
 	return mirror.CommitPaths(ctx, mirror.Options{RepoPath: repoPath}, message, []string{"manifest.json", "data", "pages"})
 }
 

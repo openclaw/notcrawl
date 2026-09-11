@@ -110,6 +110,8 @@ Git share mode publishes compressed JSONL table snapshots and normalized Markdow
 
 `publish --tag NAME` creates an immutable checkpoint. `subscribe` and `update` merge snapshots without deleting local-only rows by default; `--restore` requests exact replacement, and `--retain-revisions` saves replaced local payloads.
 
+An archive with no Markdown pages can still be published and subscribed to.
+
 Secrets are not included in Markdown or git share snapshots.
 Structured signed-file URL credentials are removed from these outgoing
 projections; ordinary link parameters and private local raw recovery payloads
