@@ -799,15 +799,6 @@ func canonicalImportTable(table string) bool {
 }
 
 func importCanonicalRow(ctx context.Context, st *store.Store, table string, row map[string]any) error {
-	numericFields := []string{"created_time", "last_edited_time", "alive", "synced_at"}
-	if table == "blocks" {
-		numericFields = append(numericFields, "display_order")
-	}
-	for _, field := range numericFields {
-		if value, ok := row[field].(float64); ok && (value < -0x1p63 || value >= 0x1p63) {
-			return errors.New("snapshot canonical integer is out of range")
-		}
-	}
 	switch table {
 	case "pages":
 		return st.UpsertPage(ctx, store.Page{

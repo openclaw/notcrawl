@@ -139,21 +139,32 @@ func TestDecodeImportRowRejectsInvalidNumbersAndTrailingValues(t *testing.T) {
 	}
 }
 
-func TestCanonicalImportRejectsOutOfRangeFloats(t *testing.T) {
-	for _, table := range []string{"pages", "blocks", "comments"} {
-		fields := []string{"created_time", "last_edited_time", "synced_at", "alive"}
-		if table == "blocks" {
-			fields = append(fields, "display_order")
+func TestCanonicalImportPreservesLegacyFloatConversion(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "archive.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for i, raw := range []string{"9223372036854775807.0", "-9223372036854777856.0"} {
+		var previous map[string]any
+		data := []byte(fmt.Sprintf(`{"id":"block-%d","display_order":%s,"alive":1,"source":"test"}`, i, raw))
+		if err := json.Unmarshal(data, &previous); err != nil {
+			t.Fatal(err)
 		}
-		for _, field := range fields {
-			for _, value := range []float64{0x1p63, math.Nextafter(-0x1p63, math.Inf(-1))} {
-				t.Run(fmt.Sprintf("%s/%s/%g", table, field, value), func(t *testing.T) {
-					err := importCanonicalRow(context.Background(), nil, table, map[string]any{field: value})
-					if err == nil || err.Error() != "snapshot canonical integer is out of range" {
-						t.Fatalf("bounds check = %v", err)
-					}
-				})
-			}
+		row, err := decodeImportRow(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := importCanonicalRow(ctx, st, "blocks", row); err != nil {
+			t.Fatal(err)
+		}
+		var got int64
+		if err := st.DB().QueryRowContext(ctx, `select display_order from blocks where id = ?`, row["id"]).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if want := rowInt64(previous, "display_order"); got != want {
+			t.Fatalf("decimal conversion changed: got %d, want legacy %d", got, want)
 		}
 	}
 }
@@ -161,20 +172,14 @@ func TestCanonicalImportRejectsOutOfRangeFloats(t *testing.T) {
 func TestSnapshotNumericFailureRollsBack(t *testing.T) {
 	for _, tc := range []struct {
 		name, table, field, value, suffix string
-		mergeOnly                         bool
 	}{
 		{name: "integer-overflow", table: "blocks", field: "display_order", value: "9223372036854775808"},
 		{name: "integer-underflow", table: "record_sources", field: "synced_at", value: "-9223372036854775809"},
 		{name: "decimal-overflow", table: "blocks", field: "display_order", value: "1e400"},
-		{name: "canonical-upper-bound", table: "blocks", field: "display_order", value: "9223372036854775808.0", mergeOnly: true},
-		{name: "canonical-lower-bound", table: "blocks", field: "display_order", value: "-9223372036854777856.0", mergeOnly: true},
 		{name: "trailing-value", table: "blocks", field: "display_order", value: "42", suffix: " {}"},
 		{name: "trailing-garbage", table: "blocks", field: "display_order", value: "42", suffix: " garbage"},
 	} {
 		for _, restore := range []bool{false, true} {
-			if restore && tc.mergeOnly {
-				continue
-			}
 			t.Run(fmt.Sprintf("%s/restore=%t", tc.name, restore), func(t *testing.T) {
 				ctx := context.Background()
 				src, md := snapshotStoreForTest(t, ctx, "Source", "source fixture")
