@@ -2,13 +2,16 @@
 
 ## Unreleased
 
-- Update CrawlKit to v0.15.0 while retaining the Go 1.27.1 minimum.
-- Document fail-closed export errors for malformed protected JSON, private read-only diagnosis, separate-path recovery limits, and partial or stale output after failure.
-- Sanitize signed file URLs inside known Desktop raw JSON envelopes and fallback copies during export, including existing archives, without changing local recovery bytes or exact numeric values.
-- Remove structured signed-file URL credentials from outgoing shares and Markdown without changing local raw recovery payloads or ordinary link parameters.
-- Commit API content batches and their search index together, retaining searchable progress when a later request fails.
-- Reject incomplete API continuation metadata without retiring unseen blocks or marking page coverage complete.
-- Preserve completed API and Desktop todo checkboxes in Markdown exports.
+**Highlights:** More reliable archive sharing and searchable progress after interrupted syncs.
+
+- Preserve exact signed 64-bit integer literals during snapshot subscribe/update and restore, rejecting out-of-range literals without modifying the archive; decimal and exponent notation retain floating-point behavior. Thanks @vincentkoc.
+- Allow publishing archives with no Markdown pages, keeping generated snapshot commits separate from unrelated staged files.
+- Remove structured signed-file URL credentials from outgoing shares and Markdown, including known Desktop JSON envelopes and fallback copies in existing archives, while preserving local recovery bytes, exact numeric values, and ordinary link parameters. Thanks @vincentkoc.
+- Commit API content batches and their search index together, retaining searchable progress when a later request fails. Thanks @vincentkoc.
+- Reject incomplete API continuation metadata without retiring unseen blocks or marking page coverage complete. Thanks @vincentkoc.
+- Preserve completed API and Desktop todo checkboxes in Markdown exports. Thanks @vincentkoc.
+- Document fail-closed export errors, private read-only diagnosis, separate-path recovery limits, and partial or stale output after failure. Thanks @vincentkoc.
+- Update CrawlKit to v0.16.1, refresh Go runtime dependencies, vulnerability scanning, and dead-code tooling, and retain the Go 1.27.1 minimum.
 
 ## 0.6.0 - 2026-09-07
 
