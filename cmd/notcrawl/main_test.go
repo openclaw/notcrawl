@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/openclaw/notcrawl/internal/config"
 	"github.com/openclaw/notcrawl/internal/notionapi"
@@ -26,6 +27,98 @@ func TestSearchFieldCollapsesRecordSeparators(t *testing.T) {
 	got := searchField("line one\nline\ttwo  line three")
 	if got != "line one line two line three" {
 		t.Fatalf("unexpected field: %q", got)
+	}
+}
+
+func TestSnapshotIntegerCLI(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	for _, key := range []string{"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"} {
+		t.Setenv(key, filepath.Join(dir, key))
+	}
+	t.Setenv("CRAWLKIT_NO_UPDATE_CHECK", "1")
+	t.Setenv("NOTCRAWL_NO_UPDATE_CHECK", "1")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(dir, "missing.gitconfig"))
+	t.Setenv("GIT_ALLOW_PROTOCOL", "file")
+	configPath := filepath.Join(dir, "fixture.toml")
+	body := fmt.Sprintf(`markdown_dir = %q
+[notion.desktop]
+enabled = false
+[notion.api]
+enabled = false
+[notion.mcp]
+enabled = false
+`, filepath.Join(dir, "markdown"))
+	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(dir, "source.db")
+	src, err := store.Open(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = src.Close() })
+	if err := src.UpsertPage(ctx, store.Page{ID: "page", Title: "Fixture", Alive: true, Source: "test", SyncedAt: 42}); err != nil {
+		t.Fatal(err)
+	}
+	values := []int64{1<<53 + 1, 1<<63 - 1, -1 << 63}
+	for i, value := range values {
+		if err := src.UpsertBlock(ctx, store.Block{
+			ID: fmt.Sprintf("block-%d", i), PageID: "page", Type: "text", Text: "fixture",
+			DisplayOrder: value, Alive: true, Source: "test", SyncedAt: 42,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := src.Close(); err != nil {
+		t.Fatal(err)
+	}
+	invoke := func(t *testing.T, db string, args ...string) {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		if err := run(ctx, append([]string{"--config", configPath, "--db", db}, args...), &stdout, &stderr); err != nil {
+			t.Fatalf("CLI %v: %v\n%s\n%s", args, err, stdout.String(), stderr.String())
+		}
+	}
+	repo := filepath.Join(dir, "publication")
+	invoke(t, sourcePath, "publish", "--repo", repo)
+	for _, restore := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restore=%t", restore), func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "destination.db")
+			checkout := filepath.Join(t.TempDir(), "checkout")
+			args := []string{"subscribe", "--repo", checkout}
+			if restore {
+				args = append(args, "--restore")
+			}
+			invoke(t, target, append(args, repo)...)
+			invoke(t, target, "update", "--repo", checkout, "--retain-revisions")
+			dst, err := store.OpenReadOnly(target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dst.Close()
+			for i, want := range values {
+				var got int64
+				var storageType string
+				if err := dst.DB().QueryRowContext(ctx, `select display_order, typeof(display_order) from blocks where id = ?`,
+					fmt.Sprintf("block-%d", i)).Scan(&got, &storageType); err != nil {
+					t.Fatal(err)
+				}
+				if got != want || storageType != "integer" {
+					t.Errorf("CLI round trip=%d (%s), want %d (integer)", got, storageType, want)
+				}
+			}
+			var revisions int
+			if err := dst.DB().QueryRowContext(ctx, `select count(*) from record_revisions`).Scan(&revisions); err != nil {
+				t.Fatal(err)
+			}
+			if revisions != 0 {
+				t.Fatalf("unchanged CLI update retained %d revisions", revisions)
+			}
+		})
 	}
 }
 

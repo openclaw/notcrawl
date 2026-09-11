@@ -108,7 +108,7 @@ Run `notcrawl --help` for the full command summary.
 
 Git share mode publishes compressed JSONL table snapshots and normalized Markdown. Another machine can subscribe and search the archive without Notion credentials.
 
-`publish --tag NAME` creates an immutable checkpoint. `subscribe` and `update` merge snapshots without deleting local-only rows by default; `--restore` requests exact replacement, and `--retain-revisions` saves replaced local payloads.
+`publish --tag NAME` creates an immutable checkpoint. `subscribe` and `update` merge snapshots without deleting local-only rows by default; `--restore` requests exact replacement, and `--retain-revisions` saves replaced local payloads. Snapshot imports preserve signed 64-bit integer literals exactly, including ordering values above 2^53; out-of-range integer literals fail the import without changing the archive. Decimal and exponent notation retain floating-point behavior.
 
 Secrets are not included in Markdown or git share snapshots.
 Structured signed-file URL credentials are removed from these outgoing
