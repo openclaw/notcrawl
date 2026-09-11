@@ -2,6 +2,7 @@ package share
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"database/sql"
@@ -586,8 +587,8 @@ func importTable(ctx context.Context, st *store.Store, db *sql.Tx, path, table s
 	count := 0
 	revisions := 0
 	for scanner.Scan() {
-		var row map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
+		row, err := decodeImportRow(scanner.Bytes())
+		if err != nil {
 			return count, revisions, err
 		}
 		if len(row) == 0 {
@@ -650,6 +651,40 @@ func importTable(ctx context.Context, st *store.Store, db *sql.Tx, path, table s
 		}
 	}
 	return count, revisions, scanner.Err()
+}
+
+func decodeImportRow(data []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var row map[string]any
+	if err := dec.Decode(&row); err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return nil, errors.New("snapshot row must contain exactly one JSON value")
+	}
+	// Normalize before keys, revisions, canonical upserts or direct SQL see
+	// the row: json.Number must not become a string binding or a zero value.
+	for col, value := range row {
+		number, ok := value.(json.Number)
+		if !ok {
+			continue
+		}
+		if strings.ContainsAny(string(number), ".eE") {
+			value, err := number.Float64()
+			if err != nil {
+				return nil, errors.New("snapshot row contains an unrepresentable decimal")
+			}
+			row[col] = value
+		} else {
+			value, err := number.Int64()
+			if err != nil {
+				return nil, errors.New("snapshot row contains an out-of-range integer")
+			}
+			row[col] = value
+		}
+	}
+	return row, nil
 }
 
 func importInsertStatement(table string, cols, quotedCols, holders []string, restore bool) (string, error) {
@@ -764,6 +799,15 @@ func canonicalImportTable(table string) bool {
 }
 
 func importCanonicalRow(ctx context.Context, st *store.Store, table string, row map[string]any) error {
+	numericFields := []string{"created_time", "last_edited_time", "alive", "synced_at"}
+	if table == "blocks" {
+		numericFields = append(numericFields, "display_order")
+	}
+	for _, field := range numericFields {
+		if value, ok := row[field].(float64); ok && (value < -0x1p63 || value >= 0x1p63) {
+			return errors.New("snapshot canonical integer is out of range")
+		}
+	}
 	switch table {
 	case "pages":
 		return st.UpsertPage(ctx, store.Page{

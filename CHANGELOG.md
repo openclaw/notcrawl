@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve exact signed 64-bit integer literals in snapshot merges and restores, with checked canonical float-to-integer conversions.
 - Update CrawlKit to v0.15.0 while retaining the Go 1.27.1 minimum.
 - Document fail-closed export errors for malformed protected JSON, private read-only diagnosis, separate-path recovery limits, and partial or stale output after failure.
 - Sanitize signed file URLs inside known Desktop raw JSON envelopes and fallback copies during export, including existing archives, without changing local recovery bytes or exact numeric values.
