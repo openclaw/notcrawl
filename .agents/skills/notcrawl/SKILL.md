@@ -16,7 +16,7 @@ for current external context.
 - Cache: `~/.notcrawl/cache`
 - Markdown archive: `~/.notcrawl/pages`
 - Git share repo: `~/.notcrawl/share`
-- Repo: `~/GIT/_Perso/notcrawl`
+- Repo: the local `notcrawl` checkout
 - Preferred CLI: `notcrawl`; fallback to `go run ./cmd/notcrawl` from the repo if the installed binary is stale
 
 ## Freshness
@@ -76,8 +76,8 @@ notcrawl sql "select title, last_edited_time from pages order by coalesce(last_e
 
 Do not use SQL to mutate the archive.
 
-When the installed CLI lacks a new feature, build or run from
-`~/GIT/_Perso/notcrawl` before concluding the feature is missing.
+When the installed CLI lacks a new feature, build or run from the repository
+checkout before concluding the feature is missing.
 
 ## Notion Boundaries
 

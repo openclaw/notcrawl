@@ -10,8 +10,8 @@ make check
 ```
 
 Run `make help` to see the credential-free snapshot and other repository
-targets. The official release path is `make release TAG=vX.Y.Z`; it builds and
-verifies the complete artifact set before anything can be uploaded.
+targets. Official releases use the unified GitHub Actions workflow described
+in [Distribution](docs/distribution.md); local release targets refuse publication.
 
 Implementation notes:
 
