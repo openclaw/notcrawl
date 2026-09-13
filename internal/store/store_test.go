@@ -597,11 +597,11 @@ func TestStoreEnsuresFallbackSpaces(t *testing.T) {
 	if added != 1 {
 		t.Fatalf("expected one fallback space, got %d", added)
 	}
-	name, err := st.SpaceName(ctx, spaceID)
+	names, err := st.SpaceNames(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if name != "External Space 52f1c029-ea9259e0" {
+	if name := names[spaceID]; name != "External Space 52f1c029-ea9259e0" {
 		t.Fatalf("unexpected fallback space name: %q", name)
 	}
 	added, err = st.EnsureSpaceFallbacks(ctx, "test")
@@ -702,62 +702,6 @@ func TestStoreReturnsPageBlocksInDisplayTreeOrder(t *testing.T) {
 	}
 	if len(got) != 3 || got[0].ID != "a-root" || got[1].ID != "a-child" || got[2].ID != "z-root" {
 		t.Fatalf("unexpected block tree order: %+v", got)
-	}
-}
-
-func TestStoreResolvesPageTeamThroughCollectionParent(t *testing.T) {
-	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	ctx := context.Background()
-	now := NowMS()
-	if err := st.UpsertTeam(ctx, Team{ID: "team1", SpaceID: "space1", Name: "Research", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertCollection(ctx, Collection{ID: "collection1", SpaceID: "space1", ParentID: "team1", ParentTable: "team", Name: "Roadmap", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	page := Page{ID: "page1", SpaceID: "space1", ParentID: "collection1", ParentTable: "collection", CollectionID: "collection1", Title: "Row", Alive: true, Source: "test", SyncedAt: now}
-	if err := st.UpsertPage(ctx, page); err != nil {
-		t.Fatal(err)
-	}
-
-	teamID, err := st.PageTeamID(ctx, page)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if teamID != "team1" {
-		t.Fatalf("expected team1, got %q", teamID)
-	}
-}
-
-func TestStoreResolvesPageTeamThroughBlockParent(t *testing.T) {
-	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	ctx := context.Background()
-	now := NowMS()
-	if err := st.UpsertTeam(ctx, Team{ID: "team1", SpaceID: "space1", Name: "Research", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertBlock(ctx, Block{ID: "block1", SpaceID: "space1", ParentID: "team1", ParentTable: "team", Type: "text", Text: "parent", Alive: true, Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	page := Page{ID: "page1", SpaceID: "space1", ParentID: "block1", ParentTable: "block", Title: "Child", Alive: true, Source: "test", SyncedAt: now}
-	if err := st.UpsertPage(ctx, page); err != nil {
-		t.Fatal(err)
-	}
-
-	teamID, err := st.PageTeamID(ctx, page)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if teamID != "team1" {
-		t.Fatalf("expected team1, got %q", teamID)
 	}
 }
 

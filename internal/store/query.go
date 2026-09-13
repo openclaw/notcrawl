@@ -259,66 +259,6 @@ func (s *Store) CollectionParents(ctx context.Context) (map[string]ParentRef, er
 	return out, rows.Err()
 }
 
-func (s *Store) SpaceName(ctx context.Context, id string) (string, error) {
-	if id == "" {
-		return "default", nil
-	}
-	var name sql.NullString
-	err := s.queryRowContext(ctx, `select name from spaces where id = ?`, id).Scan(&name)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fallbackSpaceName(id), nil
-		}
-		return "", err
-	}
-	if name.Valid && name.String != "" {
-		return name.String, nil
-	}
-	return fallbackSpaceName(id), nil
-}
-
-func (s *Store) PageTeamID(ctx context.Context, page Page) (string, error) {
-	seen := map[string]bool{page.ID: true}
-	return s.resolveTeamID(ctx, page.ParentTable, page.ParentID, page.CollectionID, seen)
-}
-
-func (s *Store) resolveTeamID(ctx context.Context, table, id, collectionID string, seen map[string]bool) (string, error) {
-	if table == "team" {
-		return id, nil
-	}
-	if table == "collection" && id == "" {
-		id = collectionID
-	}
-	if id == "" || seen[table+":"+id] {
-		return "", nil
-	}
-	seen[table+":"+id] = true
-	switch table {
-	case "block":
-		var parentID, parentTable sql.NullString
-		err := s.queryRowContext(ctx, `select parent_id, parent_table from blocks where id = ?`, id).Scan(&parentID, &parentTable)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return "", nil
-			}
-			return "", err
-		}
-		return s.resolveTeamID(ctx, parentTable.String, parentID.String, "", seen)
-	case "collection", "database", "data_source":
-		var parentID, parentTable sql.NullString
-		err := s.queryRowContext(ctx, `select parent_id, parent_table from collections where id = ?`, id).Scan(&parentID, &parentTable)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				return "", nil
-			}
-			return "", err
-		}
-		return s.resolveTeamID(ctx, parentTable.String, parentID.String, "", seen)
-	default:
-		return "", nil
-	}
-}
-
 func fallbackSpaceName(id string) string {
 	return "External Space " + notiontext.ShortID(id)
 }

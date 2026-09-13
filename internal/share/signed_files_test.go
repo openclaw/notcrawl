@@ -80,7 +80,7 @@ func TestShareProjectsSignedFilesWithoutChangingArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	if _, err := Import(ctx, dst, repo); err != nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	var localRaw, importedRaw string

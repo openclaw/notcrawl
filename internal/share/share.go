@@ -78,16 +78,6 @@ func SubscribeWithOptions(ctx context.Context, st *store.Store, remote, repoPath
 	return ImportWithOptions(ctx, st, repoPath, importOpts)
 }
 
-func Update(ctx context.Context, st *store.Store, remote, repoPath, branch string) (Manifest, error) {
-	manifest, _, err := UpdateAt(ctx, st, remote, repoPath, branch, "")
-	return manifest, err
-}
-
-func UpdateAt(ctx context.Context, st *store.Store, remote, repoPath, branch, ref string) (Manifest, string, error) {
-	result, resolved, err := UpdateAtWithOptions(ctx, st, remote, repoPath, branch, ref, ImportOptions{})
-	return result.Manifest, resolved, err
-}
-
 func UpdateAtWithOptions(ctx context.Context, st *store.Store, remote, repoPath, branch, ref string, importOpts ImportOptions) (ImportResult, string, error) {
 	if branch == "" {
 		branch = "main"
