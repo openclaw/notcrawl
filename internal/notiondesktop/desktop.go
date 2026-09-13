@@ -346,7 +346,6 @@ func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int
 	if err := rows.Err(); err != nil {
 		return 0, 0, 0, err
 	}
-	pageFor := func(id string) string { return "" }
 	var resolve func(string, map[string]bool) string
 	resolve = func(id string, seen map[string]bool) string {
 		if id == "" || seen[id] {
@@ -365,7 +364,7 @@ func ingestBlocks(ctx context.Context, st *store.Store, db *sql.DB, syncedAt int
 		}
 		return ""
 	}
-	pageFor = func(id string) string { return resolve(id, map[string]bool{}) }
+	pageFor := func(id string) string { return resolve(id, map[string]bool{}) }
 	children := childBlocksByParent(all)
 	for _, b := range all {
 		if isPageType(b.Type) {
@@ -495,10 +494,7 @@ func ingestComments(ctx context.Context, st *store.Store, db *sql.DB, syncedAt i
 			'created_by_id', created_by_id, 'created_time', created_time, 'last_edited_time', last_edited_time, 'alive', alive), '{}')
 		from comment`)
 	if err != nil {
-		if ignoreMissingTable(err) == nil {
-			return 0, nil
-		}
-		return 0, err
+		return 0, ignoreMissingTable(err)
 	}
 	defer rows.Close()
 	n := 0
