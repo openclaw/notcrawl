@@ -4,6 +4,7 @@ BINARY ?= bin/notcrawl
 CLI = $(if $(filter /%,$(BINARY)),$(BINARY),./$(BINARY))
 TAG ?=
 ASSET_DIR ?= dist/release-assets
+DEADCODE_VERSION = v0.50.0
 
 .PHONY: help build test test-release run fmt fmt-check deps lint smoke check release-notes release-check snapshot snapshot-release release-snapshot release release-artifacts release-macos verify-release verify-release-macos
 
@@ -35,10 +36,11 @@ deps: ## Verify module metadata and known vulnerabilities.
 	git diff --exit-code -- go.mod go.sum
 	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
-lint: ## Run vet and dead-code analysis.
+lint: ## Run vet and production/test dead-code analysis.
 	GOWORK=off go vet ./...
 	@output_file="$$(mktemp)"; trap 'rm -f "$$output_file"' EXIT; \
-	if ! GOWORK=off go run golang.org/x/tools/cmd/deadcode@v0.50.0 -test ./... > "$$output_file"; then \
+	if ! GOWORK=off go run golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION) -test ./... > "$$output_file" || \
+	   ! GOWORK=off go run golang.org/x/tools/cmd/deadcode@$(DEADCODE_VERSION) ./... >> "$$output_file"; then \
 		cat "$$output_file"; exit 1; \
 	fi; \
 	if [ -s "$$output_file" ]; then cat "$$output_file"; exit 1; fi

@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - feat/use-crawlkit
   workflow_dispatch:
 
 permissions:
@@ -16,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  GOWORK: "off"
 
 jobs:
   deps:
@@ -24,118 +23,70 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Verify module cache
-        run: go mod verify
-
-      - name: Check go.mod tidy
-        run: |
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
-
-      - name: Run govulncheck
-        run: '"$(go env GOPATH)/bin/govulncheck" ./...'
+      - name: Verify dependencies and vulnerabilities
+        run: make deps
 
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Check formatting
-        run: |
-          changed="$(gofmt -l .)"
-          if [ -n "$changed" ]; then
-            printf 'gofmt wants changes in:\n%s\n' "$changed"
-            exit 1
-          fi
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Install deadcode
-        run: go install golang.org/x/tools/cmd/deadcode@v0.50.0
-
-      - name: Deadcode
-        run: |
-          output_file=$(mktemp)
-          "$(go env GOPATH)/bin/deadcode" -test ./... > "$output_file"
-          if [ -s "$output_file" ]; then
-            cat "$output_file"
-            exit 1
-          fi
+      - name: Formatting, vet, and dead code
+        run: make fmt-check lint
 
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
+      - name: Tests and built CLI smoke
+        run: make test test-release smoke
 
-      - name: Test
-        run: go test -count=1 ./...
-
-      - name: Test macOS release scripts
-        run: ./scripts/test-notcrawl-macos-release.sh
-
-      - name: Build CLI
-        run: go build -ldflags "-X main.version=ci" -o bin/notcrawl ./cmd/notcrawl
-
-      - name: Smoke test CLI control surface
-        run: |
-          set -euo pipefail
-          output="$(./bin/notcrawl --help 2>&1)"
-          printf '%s\n' "$output"
-          printf '%s' "$output" | grep -q "Usage of notcrawl:"
-          printf '%s' "$output" | grep -q "metadata"
-          printf '%s' "$output" | grep -q "tui"
-          test "$(./bin/notcrawl --version)" = "ci"
-          ./bin/notcrawl metadata --json | grep -q '"schema_version"'
-          cfg="$RUNNER_TEMP/notcrawl.toml"
-          db="$RUNNER_TEMP/notcrawl.db"
-          ./bin/notcrawl --config "$cfg" init
-          ./bin/notcrawl --config "$cfg" --db "$db" status --json | grep -q '"databases"'
-          ./bin/notcrawl --config "$cfg" --db "$db" tui --json --limit 1 | grep -q '^\['
+  macos-test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Tests and built CLI smoke
+        run: make test test-release smoke
 
   windows-test:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-
       - name: Test
         run: go test -count=1 ./...
-
       - name: Build CLI
         run: go build -ldflags "-X main.version=ci" -o notcrawl.exe ./cmd/notcrawl
 
@@ -144,26 +95,19 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Snapshot release build
-        uses: goreleaser/goreleaser-action@v7.2.3
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           distribution: goreleaser
-          version: "~> v2"
-          args: release --snapshot --clean --skip=publish
-
-      - name: Snapshot official Linux release build
-        uses: goreleaser/goreleaser-action@v7.2.3
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: release --snapshot --clean --skip=publish --config .goreleaser-release.yml
+          version: v2.18.1
+          install-only: true
+      - name: Validate and build both snapshot configurations
+        run: make release-check snapshot snapshot-release
