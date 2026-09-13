@@ -102,7 +102,7 @@ The main commands are:
 
 Run `notcrawl --help` for the full command summary.
 
-`sql` accepts one SELECT, WITH, or PRAGMA statement and opens the archive read-only. Quoted punctuation and SQL comments are supported. It never creates or migrates the archive; run `sync` first to prepare a new archive or upgrade an older schema.
+`sql` accepts one SELECT, WITH, or PRAGMA statement and opens the archive read-only. Leading comments, multiline queries, and quoted punctuation are supported. It never creates or migrates the archive; run `sync` first to prepare a new archive or upgrade an older schema.
 
 ## Share an archive
 
