@@ -870,6 +870,10 @@ func TestSQLCommandRejectsMutatingQueries(t *testing.T) {
 	ctx := context.Background()
 	for _, query := range []string{
 		"SELECT 1; DELETE FROM pages",
+		"/* leading */ SELECT 1; DELETE FROM pages",
+		"-- leading\nWITH x AS (SELECT 1) DELETE FROM pages",
+		"/* leading */ PRAGMA user_version=42",
+		"SELECT/* adjacent */1; DELETE FROM pages",
 		"WITH x AS (SELECT 1) DELETE FROM pages",
 		"PRAGMA user_version=42",
 		"PRAGMA user_version(42)",
@@ -904,6 +908,14 @@ func TestSQLCommandAllowsReadQueries(t *testing.T) {
 		want  string
 	}{
 		{query: "SELECT title FROM pages", want: "Launch Plan"},
+		{query: "SELECT\ntitle FROM pages", want: "Launch Plan"},
+		{query: "SELECT\ttitle FROM pages", want: "Launch Plan"},
+		{query: "/* leading comment */ SELECT title FROM pages", want: "Launch Plan"},
+		{query: "-- leading comment\nSELECT title FROM pages", want: "Launch Plan"},
+		{query: "SELECT/* adjacent comment */title FROM pages", want: "Launch Plan"},
+		{query: "SELECT(1)", want: "1"},
+		{query: "WITH\nx AS (SELECT title FROM pages) SELECT * FROM x", want: "Launch Plan"},
+		{query: "PRAGMA\nuser_version", want: "0"},
 		{query: "WITH x AS (SELECT title FROM pages) SELECT * FROM x", want: "Launch Plan"},
 		{query: "PRAGMA user_version", want: "0"},
 		{query: "PRAGMA table_info(pages)", want: "title"},
@@ -932,6 +944,17 @@ func TestSQLCommandAllowsReadQueries(t *testing.T) {
 				t.Fatalf("read query mutated archive: pages=%d user_version=%d", pages, userVersion)
 			}
 		})
+	}
+}
+
+func TestSQLInspectionRejectsNonStatements(t *testing.T) {
+	for _, query := range []string{
+		"", " \t\n", "-- comment", "-- comment\n", "/* comment */", "/* unfinished",
+		"/* comment */ -- another comment", "; SELECT 1", "SELECTED 1", "SELECT1", "SELECT_1", "SELECTé", "PRAGMAfoo", "WITHIN",
+	} {
+		if isSQLInspectionQuery(query) {
+			t.Errorf("accepted non-statement %q", query)
+		}
 	}
 }
 

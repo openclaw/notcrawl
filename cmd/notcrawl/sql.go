@@ -82,20 +82,20 @@ func printRows(w io.Writer, rows *sql.Rows) error {
 }
 
 func isSQLInspectionQuery(query string) bool {
-	lower := strings.ToLower(strings.TrimSpace(query))
-	if !strings.HasPrefix(lower, "select ") && !strings.HasPrefix(lower, "with ") && !strings.HasPrefix(lower, "pragma ") {
-		return false
-	}
 	// SQLite's mode=ro enforces archive safety. Limit input to one statement so
 	// it cannot disable query_only and then attach a writable database.
+	started := false
 	ended := false
 	for i := 0; i < len(query); i++ {
 		switch query[i] {
 		case 0:
 			return false
-		case ' ', '\t', '\r', '\n', '\f':
+		case ' ', '\t', '\r', '\n', '\f', '\v':
 			continue
 		case ';':
+			if !started {
+				return false
+			}
 			ended = true
 			continue
 		case '-':
@@ -109,7 +109,7 @@ func isSQLInspectionQuery(query string) bool {
 			if i+1 < len(query) && query[i+1] == '*' {
 				end := strings.Index(query[i+2:], "*/")
 				if end < 0 {
-					return true // SQLite treats an unfinished block comment as EOF.
+					return started // SQLite treats an unfinished block comment as EOF.
 				}
 				i += end + 3
 				continue
@@ -117,6 +117,20 @@ func isSQLInspectionQuery(query string) bool {
 		}
 		if ended {
 			return false
+		}
+		if !started {
+			start := i
+			for i < len(query) && sqlIdentifierByte(query[i]) {
+				i++
+			}
+			switch strings.ToLower(query[start:i]) {
+			case "select", "with", "pragma":
+				started = true
+			default:
+				return false
+			}
+			i--
+			continue
 		}
 		switch quote := query[i]; quote {
 		case '\'', '"', '`', '[':
@@ -139,5 +153,10 @@ func isSQLInspectionQuery(query string) bool {
 			}
 		}
 	}
-	return true
+	return started
+}
+
+func sqlIdentifierByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' ||
+		b >= '0' && b <= '9' || b == '_' || b == '$' || b >= 0x80
 }

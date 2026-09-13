@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Preserve CSV/TSV properties named `page_id`, `page_title`, or `url`, and make duplicate-header ordering and fallback page titles deterministic.
+- Accept valid read-only SQL with leading comments, newline/tab separators, or punctuation adjacent to the first keyword, while retaining single-statement and SQLite write protections.
 
 ## 0.6.1 - 2026-09-11
 
