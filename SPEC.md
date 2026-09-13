@@ -25,7 +25,7 @@ V1 scope:
 - pages and blocks
 - databases/data sources as collections, including current data-source API endpoints
 - database rows as pages linked to their collection
-- comments and discussions where available
+- comments where available
 - users and spaces/workspaces
 - FTS5 search over rendered page/comment text
 - raw SQL access
@@ -130,10 +130,10 @@ Core tables:
 - `pages`
 - `blocks`
 - `collections`
-- `collection_views`
 - `comments`
-- `discussions`
 - `raw_records`
+- `record_sources`
+- `record_revisions`
 - `sync_state`
 - `page_fts`
 - `comment_fts`
@@ -141,8 +141,8 @@ Core tables:
 ## Markdown Archive
 
 Markdown export writes deterministic Unicode-safe paths. Path components keep
-readable letters, numbers, CJK text, and emoji while replacing filesystem path
-separators and unsafe punctuation with dashes:
+readable letters, numbers, and CJK text while replacing emoji, filesystem path
+separators, and unsafe punctuation with dashes:
 
 ```text
 pages/<space-slug>/<team-slug>/<page-title>-<short-id>.md
@@ -160,7 +160,7 @@ Each file starts with YAML-ish front matter:
 id: ...
 space_id: ...
 title: ...
-source: desktop+api
+source: desktop
 notion_url: ...
 created_time: ...
 last_edited_time: ...

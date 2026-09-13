@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/openclaw/notcrawl/internal/config"
-	"github.com/openclaw/notcrawl/internal/notionapi"
 	"github.com/openclaw/notcrawl/internal/notionmcp"
 	"github.com/openclaw/notcrawl/internal/store"
 )
@@ -650,11 +649,9 @@ func writeMainRPCResult(w http.ResponseWriter, id any, result any) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 
-func TestWriteAPIWarnings(t *testing.T) {
+func TestWriteSyncWarnings(t *testing.T) {
 	var stderr bytes.Buffer
-	writeAPIWarnings(&stderr, notionapi.Summary{
-		Warnings: []string{"Notion API user listing is forbidden.", "   ", "Notion API discovery returned zero pages."},
-	})
+	writeSyncWarnings(&stderr, []string{"Notion API user listing is forbidden.", "   ", "Notion API discovery returned zero pages."})
 	got := stderr.String()
 	for _, want := range []string{
 		"warning: Notion API user listing is forbidden.\n",
