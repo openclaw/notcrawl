@@ -9,6 +9,14 @@ func TestTitleFromProperties(t *testing.T) {
 	}
 }
 
+func TestTitleFromPropertiesUsesStableFallback(t *testing.T) {
+	for range 100 {
+		if got := TitleFromProperties(`{"z":[["Zulu"]],"a":[["Alpha"]]}`); got != "Alpha" {
+			t.Fatalf("fallback title = %q; want Alpha", got)
+		}
+	}
+}
+
 func TestTitleFromPropertiesPrefersNotionRichTextOnce(t *testing.T) {
 	got := TitleFromProperties(`{
 		"Name": {
