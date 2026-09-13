@@ -5,7 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/openclaw/notcrawl/internal/store"
@@ -60,8 +60,8 @@ func (e Exporter) Export(ctx context.Context, databaseID string, format Format, 
 	if err != nil {
 		return Summary{}, err
 	}
-	columns := columnsFor(collection, pages)
-	headers := make([]string, 0, len(columns))
+	columns := propertyColumns(collection, pages)
+	headers := []string{"page_id", "page_title", "url"}
 	for _, col := range columns {
 		headers = append(headers, col.Header)
 	}
@@ -74,18 +74,9 @@ func (e Exporter) Export(ctx context.Context, databaseID string, format Format, 
 	}
 	for _, page := range pages {
 		props := decodeMap(page.PropertiesJSON)
-		row := make([]string, 0, len(columns))
+		row := []string{page.ID, page.Title, page.URL}
 		for _, col := range columns {
-			switch col.Key {
-			case "page_id":
-				row = append(row, page.ID)
-			case "page_title":
-				row = append(row, page.Title)
-			case "url":
-				row = append(row, page.URL)
-			default:
-				row = append(row, PropertyText(props[col.Key], refs))
-			}
+			row = append(row, PropertyText(props[col.Key], refs))
 		}
 		if err := writer.Write(row); err != nil {
 			return Summary{}, err
@@ -95,7 +86,7 @@ func (e Exporter) Export(ctx context.Context, databaseID string, format Format, 
 	if err := writer.Error(); err != nil {
 		return Summary{}, err
 	}
-	return Summary{Database: collection.ID, Rows: len(pages), Columns: len(columns)}, nil
+	return Summary{Database: collection.ID, Rows: len(pages), Columns: len(headers)}, nil
 }
 
 func ValidateFormat(format Format) error {
@@ -119,14 +110,10 @@ func (e Exporter) referenceLabels(ctx context.Context) (ReferenceLabels, error) 
 	return ReferenceLabels{Users: users, Pages: pages}, nil
 }
 
-func columnsFor(collection store.Collection, pages []store.Page) []exportColumn {
-	seenKeys := map[string]bool{"page_id": true, "page_title": true, "url": true}
+func propertyColumns(collection store.Collection, pages []store.Page) []exportColumn {
+	seenKeys := map[string]bool{}
 	seenHeaders := map[string]bool{"page_id": true, "page_title": true, "url": true}
-	cols := []exportColumn{
-		{Key: "page_id", Header: "page_id"},
-		{Key: "page_title", Header: "page_title"},
-		{Key: "url", Header: "url"},
-	}
+	var cols []exportColumn
 	for _, prop := range schemaProperties(collection.SchemaJSON) {
 		if !seenKeys[prop.Key] {
 			seenKeys[prop.Key] = true
@@ -143,9 +130,7 @@ func columnsFor(collection store.Collection, pages []store.Page) []exportColumn 
 			}
 		}
 	}
-	sort.Slice(extras, func(i, j int) bool {
-		return extras[i].Header < extras[j].Header
-	})
+	sortColumns(extras)
 	for i := range extras {
 		extras[i].Header = uniqueHeader(extras[i].Header, extras[i].Key, seenHeaders)
 	}
@@ -171,13 +156,18 @@ func schemaProperties(raw string) []exportColumn {
 		}
 		rest = append(rest, prop)
 	}
-	sort.Slice(title, func(i, j int) bool {
-		return title[i].Header < title[j].Header
-	})
-	sort.Slice(rest, func(i, j int) bool {
-		return rest[i].Header < rest[j].Header
-	})
+	sortColumns(title)
+	sortColumns(rest)
 	return append(title, rest...)
+}
+
+func sortColumns(columns []exportColumn) {
+	slices.SortFunc(columns, func(a, b exportColumn) int {
+		if order := strings.Compare(a.Header, b.Header); order != 0 {
+			return order
+		}
+		return strings.Compare(a.Key, b.Key)
+	})
 }
 
 func uniqueHeader(header, key string, seen map[string]bool) string {

@@ -3,7 +3,9 @@ package notiontext
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -72,8 +74,8 @@ func TitleFromProperties(raw string) string {
 				return text
 			}
 		}
-		for _, value := range m {
-			if text := Plain(value); text != "" {
+		for _, key := range slices.Sorted(maps.Keys(m)) {
+			if text := Plain(m[key]); text != "" {
 				return text
 			}
 		}

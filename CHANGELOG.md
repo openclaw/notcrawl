@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Preserve CSV/TSV properties named `page_id`, `page_title`, or `url`, and make duplicate-header ordering and fallback page titles deterministic.
+
 ## 0.6.1 - 2026-09-11
 
 **Highlights:** More reliable archive sharing and searchable progress after interrupted syncs.

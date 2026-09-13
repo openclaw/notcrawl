@@ -211,4 +211,8 @@ The first columns are stable metadata:
 - `url`
 
 Remaining columns come from the database schema, with any extra row properties
-appended alphabetically.
+appended alphabetically. Properties whose keys match `page_id`, `page_title`, or
+`url` remain separate from the fixed metadata columns. Duplicate column names
+are ordered by property key and disambiguated with that key. Desktop title
+inference prefers `title`, `Name`, then `name`; other properties are considered
+in key order so repeated exports choose the same fallback title and path.
