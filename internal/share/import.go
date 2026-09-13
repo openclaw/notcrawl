@@ -18,11 +18,6 @@ import (
 	"github.com/openclaw/notcrawl/internal/store"
 )
 
-func Import(ctx context.Context, st *store.Store, repoPath string) (Manifest, error) {
-	result, err := ImportWithOptions(ctx, st, repoPath, ImportOptions{})
-	return result.Manifest, err
-}
-
 func ImportWithOptions(ctx context.Context, st *store.Store, repoPath string, opts ImportOptions) (ImportResult, error) {
 	b, err := os.ReadFile(filepath.Join(repoPath, "manifest.json"))
 	if err != nil {

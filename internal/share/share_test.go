@@ -86,7 +86,7 @@ func TestPublishAndImportSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	if _, err := Import(ctx, dst, repo); err != nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	results, err := dst.Search(ctx, "hello", 10)
@@ -132,7 +132,7 @@ func TestPublishAndImportPreservesMixedSourceProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	if _, err := Import(ctx, dst, repo); err != nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	desktopLive, err := dst.RecordHasLiveSource(ctx, "page", "page1", "desktop")
@@ -192,7 +192,7 @@ func TestImportLegacySnapshotRebuildsSourceProvenance(t *testing.T) {
 	if err := dst.UpsertPage(ctx, store.Page{ID: "stale", Title: "Stale destination row", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Import(ctx, dst, repo); err != nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	hasSource, err := dst.RecordHasLiveSource(ctx, "page", "page1", "test")
@@ -394,7 +394,7 @@ func TestImportMergeAppliesIncomingTombstone(t *testing.T) {
 	if err := dst.UpsertPage(ctx, store.Page{ID: "page1", Title: "Local live", Alive: true, Source: "api", SyncedAt: now - 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Import(ctx, dst, repo); err != nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	var alive int
@@ -497,7 +497,7 @@ func TestImportRejectsIncompleteManifestBeforeClearingDestination(t *testing.T) 
 	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Import(ctx, dst, repo); err == nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil {
 		t.Fatal("expected incomplete manifest rejection")
 	}
 	pages, err := dst.Pages(ctx)
@@ -547,7 +547,7 @@ func TestImportRejectsRowCountMismatchBeforeCommit(t *testing.T) {
 	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Import(ctx, dst, repo); err == nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil {
 		t.Fatal("expected row count mismatch rejection")
 	}
 	pages, err := dst.Pages(ctx)
@@ -601,7 +601,7 @@ func TestImportRejectsSymlinkedSnapshotFile(t *testing.T) {
 	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Import(ctx, dst, repo); err == nil {
+	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil {
 		t.Fatal("expected symlinked snapshot rejection")
 	}
 	pages, err := dst.Pages(ctx)
@@ -843,7 +843,7 @@ func TestUpdatePullsExistingOriginWhenRemoteNotConfigured(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer dst.Close()
-	if _, err := Update(ctx, dst, "", local, "main"); err != nil {
+	if _, _, err := UpdateAtWithOptions(ctx, dst, "", local, "main", "", ImportOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	results, err := dst.Search(ctx, "fresh", 10)
@@ -854,12 +854,12 @@ func TestUpdatePullsExistingOriginWhenRemoteNotConfigured(t *testing.T) {
 		t.Fatalf("expected fresh pulled snapshot, got %#v", results)
 	}
 	currentHead := strings.TrimSpace(gitOutputForTest(t, local, "rev-parse", "HEAD"))
-	manifest, resolved, err := UpdateAt(ctx, dst, "", local, "main", "snapshot/old")
+	result, resolved, err := UpdateAtWithOptions(ctx, dst, "", local, "main", "snapshot/old", ImportOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved == "" || manifest.GeneratedAt == "" {
-		t.Fatalf("historical update missing ref or manifest: ref=%q manifest=%+v", resolved, manifest)
+	if resolved == "" || result.Manifest.GeneratedAt == "" {
+		t.Fatalf("historical update missing ref or manifest: ref=%q manifest=%+v", resolved, result.Manifest)
 	}
 	results, err = dst.Search(ctx, "old", 10)
 	if err != nil {

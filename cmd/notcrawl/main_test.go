@@ -334,7 +334,7 @@ func TestBlockPreviewKeepsNotionPageShape(t *testing.T) {
 		{Type: "quote", Text: "keep it readable"},
 		{Type: "code", Text: "notcrawl tui"},
 	}
-	got := blockPreview(blocks, tuiPagePreviewMax)
+	got := pagePreview(blocks, nil, tuiPagePreviewMax)
 	for _, want := range []string{"# Launch Plan", "- ship tui", "- [ ] verify local binary", "1. open terminal", "> keep it readable", "    notcrawl tui"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("preview missing %q:\n%s", want, got)
@@ -343,10 +343,10 @@ func TestBlockPreviewKeepsNotionPageShape(t *testing.T) {
 }
 
 func TestBlockPreviewCleansLegacyNotionMarkers(t *testing.T) {
-	got := blockPreview([]store.Block{
+	got := pagePreview([]store.Block{
 		{Type: "paragraph", Text: "Option A: b"},
 		{Type: "paragraph", Text: "Marketing Customer Reference Rights a https://example.com/sheet"},
-	}, tuiPagePreviewMax)
+	}, nil, tuiPagePreviewMax)
 	if strings.Contains(got, " a https://") || strings.Contains(got, ": b") {
 		t.Fatalf("preview leaked legacy markers:\n%s", got)
 	}
@@ -358,10 +358,10 @@ func TestBlockPreviewCleansLegacyNotionMarkers(t *testing.T) {
 }
 
 func TestBlockPreviewCompactsRepeatedLinkedPages(t *testing.T) {
-	got := blockPreview([]store.Block{{
+	got := pagePreview([]store.Block{{
 		Type: "paragraph",
 		Text: "linked page, linked page, linked page Add details",
-	}}, tuiPagePreviewMax)
+	}}, nil, tuiPagePreviewMax)
 	if got != "linked pages Add details" {
 		t.Fatalf("got %q", got)
 	}

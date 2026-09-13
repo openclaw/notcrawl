@@ -249,10 +249,6 @@ func pagePreview(blocks []store.Block, comments []store.Comment, maxLines int) s
 	return strings.Join(lines, "\n")
 }
 
-func blockPreview(blocks []store.Block, maxLines int) string {
-	return strings.Join(blockPreviewLines(blocks, maxLines), "\n")
-}
-
 func blockPreviewLines(blocks []store.Block, maxLines int) []string {
 	if maxLines <= 0 {
 		maxLines = 10
