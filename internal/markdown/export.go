@@ -159,7 +159,7 @@ func (e Exporter) writePage(ctx context.Context, paths pathResolver, page store.
 	writeCoverageWarning(&b, coverage)
 	wroteProperties := writeProperties(&b, paths, page)
 	beforeBlocks := b.Len()
-	renderBlocks(&b, page.ID, renderableBlocks(blocks, apiBlocksSynced))
+	renderBlocks(&b, page.ID, store.PreferredPageContentBlocks(blocks, apiBlocksSynced))
 	wroteBlocks := b.Len() > beforeBlocks
 	if shouldWriteEmptyDesktopNotice(page, comments, wroteProperties, wroteBlocks) {
 		b.WriteString("> [!NOTE]\n> No body blocks or non-title properties were present in the Desktop cache. The page may be empty or its body may not have been cached.\n\n")
@@ -439,17 +439,9 @@ func renderBlocks(b *strings.Builder, pageID string, blocks []store.Block) {
 		children[parent] = append(children[parent], block)
 	}
 	for parent := range children {
-		sort.SliceStable(children[parent], func(i, j int) bool {
-			a, z := children[parent][i], children[parent][j]
-			if a.DisplayOrder != z.DisplayOrder {
-				return a.DisplayOrder < z.DisplayOrder
-			}
-			if a.CreatedTime == z.CreatedTime {
-				return a.ID < z.ID
-			}
-			return a.CreatedTime < z.CreatedTime
-		})
+		store.SortBlockSiblings(children[parent])
 	}
+
 	renderChildren(b, pageID, children, 0)
 	if len(children[pageID]) == 0 {
 		var loose []store.Block
@@ -462,35 +454,6 @@ func renderBlocks(b *strings.Builder, pageID string, blocks []store.Block) {
 			renderBlock(b, block, 0)
 		}
 	}
-}
-
-func renderableBlocks(blocks []store.Block, apiBlocksSynced bool) []store.Block {
-	hasNotionMCP := false
-	for _, block := range blocks {
-		if block.Type == store.BlockTypeNotionMCPMarkdown {
-			hasNotionMCP = true
-			break
-		}
-	}
-	if !hasNotionMCP {
-		return blocks
-	}
-	if apiBlocksSynced {
-		out := make([]store.Block, 0, len(blocks))
-		for _, block := range blocks {
-			if block.Type != store.BlockTypeNotionMCPMarkdown {
-				out = append(out, block)
-			}
-		}
-		return out
-	}
-	var out []store.Block
-	for _, block := range blocks {
-		if block.Type == store.BlockTypeNotionMCPMarkdown {
-			out = append(out, block)
-		}
-	}
-	return out
 }
 
 func renderChildren(b *strings.Builder, parentID string, children map[string][]store.Block, depth int) {

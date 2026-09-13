@@ -3,7 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
-	"strings"
+
+	"github.com/openclaw/notcrawl/internal/notiontext"
 )
 
 func (s *Store) Pages(ctx context.Context) ([]Page, error) {
@@ -137,7 +138,7 @@ func pageBlocksDisplayOrder(pageID string, blocks []Block) []Block {
 		children[block.ParentID] = append(children[block.ParentID], block)
 	}
 	for parent := range children {
-		sortBlockSiblings(children[parent])
+		SortBlockSiblings(children[parent])
 	}
 
 	ordered := make([]Block, 0, len(blocks))
@@ -190,69 +191,34 @@ func (s *Store) PageComments(ctx context.Context, pageID string) ([]Comment, err
 }
 
 func (s *Store) UserNames(ctx context.Context) (map[string]string, error) {
-	rows, err := s.queryContext(ctx, `select id, coalesce(nullif(name, ''), nullif(email, ''), id) from users`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, err
-		}
-		out[id] = name
-	}
-	return out, rows.Err()
+	return s.stringMap(ctx, `select id, coalesce(nullif(name, ''), nullif(email, ''), id) from users`)
 }
 
 func (s *Store) PageTitles(ctx context.Context) (map[string]string, error) {
-	rows, err := s.queryContext(ctx, `select id, coalesce(nullif(title, ''), id) from pages where alive = 1`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var id, title string
-		if err := rows.Scan(&id, &title); err != nil {
-			return nil, err
-		}
-		out[id] = title
-	}
-	return out, rows.Err()
+	return s.stringMap(ctx, `select id, coalesce(nullif(title, ''), id) from pages where alive = 1`)
 }
 
 func (s *Store) SpaceNames(ctx context.Context) (map[string]string, error) {
-	rows, err := s.queryContext(ctx, `select id, name from spaces`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]string{}
-	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, err
-		}
-		out[id] = name
-	}
-	return out, rows.Err()
+	return s.stringMap(ctx, `select id, name from spaces`)
 }
 
 func (s *Store) TeamNames(ctx context.Context) (map[string]string, error) {
-	rows, err := s.queryContext(ctx, `select id, name from teams`)
+	return s.stringMap(ctx, `select id, name from teams`)
+}
+
+func (s *Store) stringMap(ctx context.Context, query string) (map[string]string, error) {
+	rows, err := s.queryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := map[string]string{}
 	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
+		var id, value string
+		if err := rows.Scan(&id, &value); err != nil {
 			return nil, err
 		}
-		out[id] = name
+		out[id] = value
 	}
 	return out, rows.Err()
 }
@@ -353,17 +319,42 @@ func (s *Store) resolveTeamID(ctx context.Context, table, id, collectionID strin
 	}
 }
 
-func shortID(id string) string {
-	clean := strings.ReplaceAll(id, "-", "")
-	if len(clean) > 16 {
-		return clean[:8] + "-" + clean[len(clean)-8:]
-	}
-	if clean == "" {
-		return "unknown"
-	}
-	return clean
+func fallbackSpaceName(id string) string {
+	return "External Space " + notiontext.ShortID(id)
 }
 
-func fallbackSpaceName(id string) string {
-	return "External Space " + shortID(id)
+func (s *Store) pageByID(ctx context.Context, id string) (Page, error) {
+	var x Page
+	var alive int
+	err := s.queryRowContext(ctx, `select id, space_id, parent_id, parent_table, collection_id, title, url, icon, cover,
+		properties_json, created_time, last_edited_time, alive, source, raw_json, synced_at
+		from pages where id = ?`, id).Scan(
+		&x.ID, &x.SpaceID, &x.ParentID, &x.ParentTable, &x.CollectionID, &x.Title, &x.URL, &x.Icon, &x.Cover,
+		&x.PropertiesJSON, &x.CreatedTime, &x.LastEditedTime, &alive, &x.Source, &x.RawJSON, &x.SyncedAt)
+	x.Alive = IntBool(alive)
+	return x, err
+}
+
+func (s *Store) blockByID(ctx context.Context, id string) (Block, error) {
+	var x Block
+	var alive int
+	err := s.queryRowContext(ctx, `select id, page_id, space_id, parent_id, parent_table, type, text, properties_json,
+		content_json, format_json, display_order, created_time, last_edited_time, alive, source, raw_json, synced_at
+		from blocks where id = ?`, id).Scan(
+		&x.ID, &x.PageID, &x.SpaceID, &x.ParentID, &x.ParentTable, &x.Type, &x.Text, &x.PropertiesJSON,
+		&x.ContentJSON, &x.FormatJSON, &x.DisplayOrder, &x.CreatedTime, &x.LastEditedTime, &alive, &x.Source, &x.RawJSON, &x.SyncedAt)
+	x.Alive = IntBool(alive)
+	return x, err
+}
+
+func (s *Store) commentByID(ctx context.Context, id string) (Comment, error) {
+	var x Comment
+	var alive int
+	err := s.queryRowContext(ctx, `select id, page_id, space_id, parent_id, text, created_by_id,
+		created_time, last_edited_time, alive, raw_json, source, synced_at
+		from comments where id = ?`, id).Scan(
+		&x.ID, &x.PageID, &x.SpaceID, &x.ParentID, &x.Text, &x.CreatedByID,
+		&x.CreatedTime, &x.LastEditedTime, &alive, &x.RawJSON, &x.Source, &x.SyncedAt)
+	x.Alive = IntBool(alive)
+	return x, err
 }
