@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Retire API pages omitted from a successful full discovery, including stale search and Markdown content, while preserving other live sources and unseen pages during empty, partial, or targeted syncs. Thanks @dub-agent.
+
 ## 0.6.2 - 2026-09-13
 
 - Preserve CSV/TSV properties named `page_id`, `page_title`, or `url`, and make duplicate-header ordering and fallback page titles deterministic.

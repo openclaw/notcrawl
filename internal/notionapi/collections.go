@@ -10,7 +10,7 @@ import (
 	"github.com/openclaw/notcrawl/internal/store"
 )
 
-func (c Client) ingestCollection(ctx context.Context, st *store.Store, collection obj) (int, error) {
+func (c Client) ingestCollection(ctx context.Context, st *store.Store, collection obj, seenPages map[string]bool) (int, error) {
 	id := collection.string("id")
 	raw := notiontext.MarshalRaw(collection)
 	parent := collection.mapObj("parent")
@@ -42,10 +42,10 @@ func (c Client) ingestCollection(ctx context.Context, st *store.Store, collectio
 	}); err != nil {
 		return 0, err
 	}
-	return c.queryCollection(ctx, st, id)
+	return c.queryCollection(ctx, st, id, seenPages)
 }
 
-func (c Client) queryCollection(ctx context.Context, st *store.Store, collectionID string) (int, error) {
+func (c Client) queryCollection(ctx context.Context, st *store.Store, collectionID string, seenPages map[string]bool) (int, error) {
 	var count int
 	cursor := ""
 	seen := map[string]bool{}
@@ -59,23 +59,26 @@ func (c Client) queryCollection(ctx context.Context, st *store.Store, collection
 		if err := c.do(ctx, http.MethodPost, path, body, &resp); err != nil {
 			return count, err
 		}
-		for _, item := range asSlice(resp["results"]) {
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			if itemType := obj(m).string("object"); itemType != "" && itemType != "page" {
+		items, err := discoveryObjects(resp)
+		if err != nil {
+			return count, err
+		}
+		for _, item := range items {
+			if itemType := item.string("object"); itemType != "" && itemType != "page" {
 				if itemType == c.collectionSearchType() {
-					if _, err := c.ingestCollection(ctx, st, obj(m)); err != nil {
+					if _, err := c.ingestCollection(ctx, st, item, seenPages); err != nil {
 						return count, err
 					}
+				} else {
+					return count, fmt.Errorf("Notion collection query returned an unexpected object type")
 				}
 				continue
 			}
 			// Collection queries refresh row metadata without fetching page bodies.
-			if _, _, _, err := c.ingestPage(ctx, st, obj(m), ingestPageOptions{CollectionID: collectionID}); err != nil {
+			if _, _, _, err := c.ingestPage(ctx, st, item, ingestPageOptions{CollectionID: collectionID}); err != nil {
 				return count, err
 			}
+			seenPages[item.string("id")] = true
 			count++
 		}
 		next, more, err := nextListCursor(resp, seen, "Notion collection query")

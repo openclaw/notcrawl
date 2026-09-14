@@ -45,6 +45,8 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 	}
 	c.HTTP = httpClientOrDefault(c.HTTP)
 	var s Summary
+	seenPages := map[string]bool{}
+	complete := true
 	started := time.Now()
 	c.tracePhase("users", "started", started)
 	users, err := c.listUsers(ctx)
@@ -77,6 +79,10 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 			return s, err
 		}
 		s.Pages++
+		seenPages[page.string("id")] = true
+		if len(warnings) > 0 {
+			complete = false
+		}
 		s.Blocks += count
 		s.Comments += comments
 		s.Warnings = append(s.Warnings, warnings...)
@@ -90,7 +96,7 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 		return s, err
 	}
 	for _, collection := range collections {
-		rows, err := c.ingestCollection(ctx, st, collection)
+		rows, err := c.ingestCollection(ctx, st, collection, seenPages)
 		if err != nil {
 			return s, err
 		}
@@ -100,6 +106,7 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 	}
 	c.tracePhase("collections", "finished", started, "databases", s.Databases, "database_rows", s.DatabaseRows)
 	if s.Pages == 0 && s.Databases == 0 && s.Blocks == 0 && s.Comments == 0 {
+		complete = false
 		status, err := st.Status(ctx)
 		if err != nil {
 			return s, err
@@ -109,8 +116,20 @@ func (c Client) Sync(ctx context.Context, st *store.Store) (Summary, error) {
 			warning = fmt.Sprintf("%s Existing local mirror still has %d pages.", warning, status.Pages)
 		}
 		s.Warnings = append(s.Warnings, warning)
+	} else if len(seenPages) == 0 {
+		complete = false
+		s.Warnings = append(s.Warnings, "Notion API discovery returned databases but no pages or rows; keeping existing API pages.")
 	}
-	if err := st.SetSyncState(ctx, SourceName, "workspace", "default", time.Now().Format(time.RFC3339)); err != nil {
+	// Only a full, nonempty discovery can retire omitted pages. Keep the
+	// source tombstones, fallback content, and search projections atomic.
+	if err := writePageBatch(ctx, st, func() error {
+		if complete {
+			if err := st.RetireSourcePagesNotSeen(ctx, SourceName, seenPages); err != nil {
+				return err
+			}
+		}
+		return st.SetSyncState(ctx, SourceName, "workspace", "default", time.Now().Format(time.RFC3339))
+	}); err != nil {
 		return s, err
 	}
 	return s, nil
@@ -166,10 +185,15 @@ func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, er
 		if err := c.do(ctx, http.MethodPost, "/search", body, &resp); err != nil {
 			return nil, err
 		}
-		for _, item := range asSlice(resp["results"]) {
-			if m, ok := item.(map[string]any); ok {
-				out = append(out, obj(m))
+		items, err := discoveryObjects(resp)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if typ := item.string("object"); typ != "" && typ != objectType {
+				return nil, fmt.Errorf("Notion search returned an unexpected object type")
 			}
+			out = append(out, item)
 		}
 		next, more, err := nextListCursor(resp, seen, "Notion search")
 		if err != nil {
@@ -180,6 +204,26 @@ func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, er
 		}
 		cursor = next
 	}
+}
+
+func discoveryObjects(resp obj) ([]obj, error) {
+	// A malformed success response cannot establish complete coverage.
+	if _, ok := resp["has_more"].(bool); !ok {
+		return nil, fmt.Errorf("Notion discovery requires a boolean has_more")
+	}
+	results, ok := resp["results"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("Notion discovery requires a results array")
+	}
+	items := make([]obj, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok || strings.TrimSpace(obj(item).string("id")) == "" {
+			return nil, fmt.Errorf("Notion discovery requires objects with nonempty IDs")
+		}
+		items = append(items, obj(item))
+	}
+	return items, nil
 }
 
 type ingestPageOptions struct {

@@ -183,6 +183,17 @@ Desktop mode is read-only. It snapshots Notion's local SQLite database before re
 
 API mode uses the official Notion API and stores raw payloads alongside normalized rows so exports can improve without another crawl.
 
+A successful, nonempty full API discovery retires API pages omitted from both
+page search and database/data-source queries, along with their API blocks and
+comments. Retired pages leave normal queries, search, and the next Markdown
+export; live Desktop or MCP copies remain available. Rediscovery restores API
+content. Discovery with no pages or rows (even if databases are found), failed
+or cancelled syncs, incomplete block walks, and targeted syncs do not retire
+unseen pages. This is a mirror-retention
+policy: Notion search can temporarily omit accessible pages, so retirement
+does not prove permanent deletion. Tombstones and local recovery rows remain
+in SQLite. Database containers themselves are not retired by omission.
+
 Notion MCP mode is read-only and targeted. It reads the Codex bearer credential at request time, never stores it, resolves only the connected Notion search and fetch tools, and strips signed URL credentials before persisting connector Markdown. Credentials are sent only to the configured HTTPS ChatGPT apps gateway. The gateway and Codex auth-file format are experimental contracts.
 
 ## Architecture

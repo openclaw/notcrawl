@@ -83,6 +83,20 @@ API sync uses `NOTION_TOKEN` by default. It must:
 4. fetch comments where the integration has access
 5. obey `Retry-After` on rate limits
 6. store raw JSON plus normalized rows
+7. after a successful, nonempty full discovery, retire API page sources absent from both page search and all collection query results
+
+Omission reconciliation records `complete-authoritative-enumeration` on the
+API page source, retires its API blocks and comments with `parent-delete-event`,
+and clears API page-block completion. Source retirement, fallback promotion,
+and FTS updates commit together. Other live sources survive; rediscovered API
+records clear their tombstones. Canonical and raw recovery rows are retained.
+Discovery with no pages or rows (including database-only results), malformed
+discovery responses, errors, cancellation, incomplete block walks, and targeted
+ingestion never trigger omission reconciliation. Restricted user listing does
+not prevent complete page discovery. Collection rows participate, but database
+containers do not have omission tombstones. This mirror policy treats omission
+as unavailable API coverage, not proof of deletion; Notion search does not
+guarantee an exhaustive inventory.
 
 Official API success responses are limited to 8 MiB per HTTP response; oversized bodies fail without retrying and incomplete pages remain eligible for repair. This limit does not apply to whole-page Notion MCP responses.
 
