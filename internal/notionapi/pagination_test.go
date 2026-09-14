@@ -32,10 +32,10 @@ func TestAPIPagination(t *testing.T) {
 			return len(items), err
 		}},
 		{"legacy-query", "/databases/database/query", "2022-06-28", func(ctx context.Context, c Client, st *store.Store) (int, error) {
-			return c.queryCollection(ctx, st, "database")
+			return c.queryCollection(ctx, st, "database", map[string]bool{})
 		}},
 		{"query", "/data_sources/database/query", "2026-03-11", func(ctx context.Context, c Client, st *store.Store) (int, error) {
-			return c.queryCollection(ctx, st, "database")
+			return c.queryCollection(ctx, st, "database", map[string]bool{})
 		}},
 		{"blocks", "/blocks/page/children", "2026-03-11", func(ctx context.Context, c Client, st *store.Store) (int, error) {
 			count, _, err := c.walkBlocks(ctx, st, "page", "page", "space")
@@ -130,7 +130,7 @@ func TestBlockPaginationFailurePreservesArchive(t *testing.T) {
 		case "/users":
 			fmt.Fprint(w, `{"results":[]}`)
 		case "/search":
-			fmt.Fprint(w, `{"results":[{"id":"page","properties":{}}]}`)
+			fmt.Fprint(w, `{"results":[{"id":"page","properties":{}}],"has_more":false}`)
 		case "/blocks/page/children":
 			if calls.Add(1) > 2 {
 				http.Error(w, "pagination did not stop", http.StatusInternalServerError)

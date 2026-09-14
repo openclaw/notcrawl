@@ -9,6 +9,48 @@ import (
 	"strings"
 )
 
+// RetireSourcePagesNotSeen requires a complete discovery and a transaction
+// that also flushes deferred page FTS updates.
+func (s *Store) RetireSourcePagesNotSeen(ctx context.Context, source string, seen map[string]bool) error {
+	rows, err := s.queryContext(ctx, `select record_id from record_sources
+		where record_table = 'page' and source = ? and alive = 1`, source)
+	if err != nil {
+		return err
+	}
+	var missing []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		if !seen[id] {
+			missing = append(missing, id)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range missing {
+		if err := s.retireRecordSource(ctx, "page", id, source, "complete-authoritative-enumeration"); err != nil {
+			return err
+		}
+		if _, err := s.RetireSourcePageBlocks(ctx, source, id); err != nil {
+			return err
+		}
+		if _, err := s.RetireSourcePageComments(ctx, source, id); err != nil {
+			return err
+		}
+		if err := s.ClearSyncState(ctx, source, "page_blocks", id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) RetireSourcePageBlocks(ctx context.Context, source, pageID string) (int, error) {
 	rows, err := s.queryContext(ctx, `select record_sources.record_id
 		from record_sources

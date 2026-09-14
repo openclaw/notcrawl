@@ -34,9 +34,9 @@ func TestSyncVerboseAPITraceAndRedaction(t *testing.T) {
 			var body bytes.Buffer
 			_, _ = body.ReadFrom(r.Body)
 			if strings.Contains(body.String(), `"value":"page"`) {
-				fmt.Fprintf(w, `{"results":[{"id":%q,"properties":{"title":{"title":[{"plain_text":%q}]}},"parent":{"type":"workspace","workspace":true}}]}`, private, private)
+				fmt.Fprintf(w, `{"results":[{"id":%q,"properties":{"title":{"title":[{"plain_text":%q}]}},"parent":{"type":"workspace","workspace":true}}],"has_more":false}`, private, private)
 			} else {
-				fmt.Fprint(w, `{"results":[]}`)
+				fmt.Fprint(w, `{"results":[],"has_more":false}`)
 			}
 		case "/blocks/" + private + "/children":
 			fmt.Fprintf(w, `{"results":[{"id":"block-private","type":"paragraph","has_children":true,"paragraph":{"rich_text":[{"plain_text":%q}]}}]}`, private)
