@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.6.2 - 2026-09-13
 
 - Preserve CSV/TSV properties named `page_id`, `page_title`, or `url`, and make duplicate-header ordering and fallback page titles deterministic.
