@@ -2,7 +2,29 @@ package notionapi
 
 import (
 	"fmt"
+	"strings"
 )
+
+func listObjects(resp obj, op string) ([]obj, error) {
+	// Validate the whole batch before writing it: malformed success responses
+	// cannot establish the coverage needed to retire unseen records.
+	if _, ok := resp["has_more"].(bool); !ok {
+		return nil, fmt.Errorf("%s requires a boolean has_more", op)
+	}
+	results, ok := resp["results"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("%s requires a results array", op)
+	}
+	items := make([]obj, 0, len(results))
+	for _, result := range results {
+		item, ok := result.(map[string]any)
+		if !ok || strings.TrimSpace(obj(item).string("id")) == "" {
+			return nil, fmt.Errorf("%s requires objects with nonempty IDs", op)
+		}
+		items = append(items, obj(item))
+	}
+	return items, nil
+}
 
 func nextListCursor(resp obj, seen map[string]bool, op string) (string, bool, error) {
 	if !resp.bool("has_more") {

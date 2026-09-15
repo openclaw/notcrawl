@@ -59,7 +59,7 @@ func (c Client) queryCollection(ctx context.Context, st *store.Store, collection
 		if err := c.do(ctx, http.MethodPost, path, body, &resp); err != nil {
 			return count, err
 		}
-		items, err := discoveryObjects(resp)
+		items, err := listObjects(resp, "Notion discovery")
 		if err != nil {
 			return count, err
 		}

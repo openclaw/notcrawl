@@ -66,12 +66,11 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 		}
 		var batch []store.Block
 		var children []string
-		for _, item := range asSlice(resp["results"]) {
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			block := obj(m)
+		items, err := listObjects(resp, "Notion block children")
+		if err != nil {
+			return count, warnings, err
+		}
+		for _, block := range items {
 			typ := block.string("type")
 			typeBody := block[typ]
 			text := notiontext.Plain(typeBody)
