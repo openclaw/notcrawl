@@ -39,7 +39,7 @@ func TestSyncVerboseAPITraceAndRedaction(t *testing.T) {
 				fmt.Fprint(w, `{"results":[],"has_more":false}`)
 			}
 		case "/blocks/" + private + "/children":
-			fmt.Fprintf(w, `{"results":[{"id":"block-private","type":"paragraph","has_children":true,"paragraph":{"rich_text":[{"plain_text":%q}]}}]}`, private)
+			fmt.Fprintf(w, `{"results":[{"id":"block-private","type":"paragraph","has_children":true,"paragraph":{"rich_text":[{"plain_text":%q}]}}],"has_more":false}`, private)
 		case "/blocks/block-private/children":
 			w.WriteHeader(http.StatusBadRequest)
 			fmt.Fprintf(w, `{"code":"validation_error","message":%q}`, private+" not supported via the API")

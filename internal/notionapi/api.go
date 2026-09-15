@@ -185,7 +185,7 @@ func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, er
 		if err := c.do(ctx, http.MethodPost, "/search", body, &resp); err != nil {
 			return nil, err
 		}
-		items, err := discoveryObjects(resp)
+		items, err := listObjects(resp, "Notion discovery")
 		if err != nil {
 			return nil, err
 		}
@@ -204,26 +204,6 @@ func (c Client) searchObjects(ctx context.Context, objectType string) ([]obj, er
 		}
 		cursor = next
 	}
-}
-
-func discoveryObjects(resp obj) ([]obj, error) {
-	// A malformed success response cannot establish complete coverage.
-	if _, ok := resp["has_more"].(bool); !ok {
-		return nil, fmt.Errorf("Notion discovery requires a boolean has_more")
-	}
-	results, ok := resp["results"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("Notion discovery requires a results array")
-	}
-	items := make([]obj, 0, len(results))
-	for _, result := range results {
-		item, ok := result.(map[string]any)
-		if !ok || strings.TrimSpace(obj(item).string("id")) == "" {
-			return nil, fmt.Errorf("Notion discovery requires objects with nonempty IDs")
-		}
-		items = append(items, obj(item))
-	}
-	return items, nil
 }
 
 type ingestPageOptions struct {

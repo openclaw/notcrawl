@@ -102,6 +102,12 @@ Official API success responses are limited to 8 MiB per HTTP response; oversized
 
 Official API pagination treats cursors as opaque values and rejects repeated cursors within each listing, without imposing a fixed page-count limit. Pagination failures must not mark an incomplete page sync complete or retire cached blocks that were not reached. Error messages identify the operation without including cursor values.
 
+Block listings at every depth and pagination step must contain a boolean
+`has_more`, a `results` array, and objects with nonempty string IDs. Invalid
+listings fail sync without retiring unseen blocks or pages or marking the page
+complete; previously committed batches remain searchable and exportable. A valid
+empty final listing still permits retirement after the whole walk succeeds.
+
 `sync --verbose` enables per-invocation stderr diagnostics for source phases and counts, with official API request attempts, endpoint classes, elapsed time, numeric HTTP statuses, and retry delays. Diagnostics use fixed labels and numeric fields, never credentials, headers, payloads, raw URLs, cursors, page identifiers, or upstream error text. Verbose mode replaces warning text with counts and sanitizes sync failures; stdout and non-verbose behavior remain unchanged.
 
 New configs should use the current Notion API version. Existing configs pinned

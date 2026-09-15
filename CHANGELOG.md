@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reject malformed API block listings before treating a page as complete, preserving cached blocks, search text, Markdown, and omitted pages when a response is incomplete.
 - Retire API pages omitted from a successful full discovery, including stale search and Markdown content, while preserving other live sources and unseen pages during empty, partial, or targeted syncs. Thanks @dub-agent.
 
 ## 0.6.2 - 2026-09-13
