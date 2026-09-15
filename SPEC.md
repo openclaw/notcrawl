@@ -173,7 +173,11 @@ The team slug is omitted when no teamspace can be resolved.
 Each export removes stale generated `.md` files under the Markdown root while
 leaving non-Markdown sidecar files alone.
 
-Each file starts with YAML-ish front matter:
+Each file starts with YAML front matter. String values are double-quoted with
+backslashes, quotes, control characters, and Unicode line separators escaped.
+Ordinary newline characters in metadata are folded to spaces.
+
+Example fields:
 
 ```yaml
 ---

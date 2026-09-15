@@ -208,8 +208,7 @@ func writeKV(b *strings.Builder, key, value string) {
 		return
 	}
 	value = strings.ReplaceAll(value, "\n", " ")
-	value = strings.ReplaceAll(value, `"`, `\"`)
-	fmt.Fprintf(b, "%s: \"%s\"\n", key, value)
+	fmt.Fprintf(b, "%s: %q\n", key, value)
 }
 
 func pruneStaleMarkdown(root string, keep map[string]bool) error {
