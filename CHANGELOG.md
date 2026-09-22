@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.6.3 - 2026-09-22
+
+**Highlights:** Safer Markdown cleanup and more reliable API mirror reconciliation.
 
 - Preserve handwritten Markdown that quotes an export ownership marker when pruning stale generated pages.
-- Escape backslashes, control characters, and Unicode line separators in Markdown front matter so metadata remains valid YAML and retains its values.
-- Reject malformed API block listings before treating a page as complete, preserving cached blocks, search text, Markdown, and omitted pages when a response is incomplete.
 - Retire API pages omitted from a successful full discovery, including stale search and Markdown content, while preserving other live sources and unseen pages during empty, partial, or targeted syncs. Thanks @dub-agent.
+- Reject malformed API block listings before treating a page as complete, preserving cached blocks, search text, Markdown, and omitted pages when a response is incomplete.
+- Escape backslashes, control characters, and Unicode line separators in Markdown front matter so metadata remains valid YAML and retains its values.
 
 ## 0.6.2 - 2026-09-13
 
