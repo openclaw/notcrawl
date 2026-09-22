@@ -61,7 +61,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 	if cmd == "tui" && hasHelpArg(cmdArgs) {
-		return runTUI(ctx, stdout, config.Config{}, cmdArgs)
+		return runTUI(ctx, stdout, config.Config{}, []string{"--help"})
 	}
 	if cmd == "search" && hasHelpArg(cmdArgs) {
 		printSearchUsage(stdout)
