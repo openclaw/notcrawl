@@ -1,5 +1,7 @@
 # Changelog
 
+## Unreleased
+
 ## 0.6.3 - 2026-09-22
 
 **Highlights:** Safer Markdown cleanup and more reliable API mirror reconciliation.
