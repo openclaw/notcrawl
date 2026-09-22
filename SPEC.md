@@ -171,7 +171,9 @@ pages/<space-slug>/<team-slug>/<page-title>-<short-id>.md
 The team slug is omitted when no teamspace can be resolved.
 
 Each export removes stale generated `.md` files under the Markdown root while
-leaving non-Markdown sidecar files alone.
+leaving unrelated Markdown and non-Markdown sidecar files alone. Cleanup recognizes
+only files beginning with notcrawl's generated front matter and a closing delimiter;
+quoting the ownership marker in a document body does not make that file generated.
 
 Each file starts with YAML front matter. String values are double-quoted with
 backslashes, quotes, control characters, and Unicode line separators escaped.
