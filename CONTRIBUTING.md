@@ -16,7 +16,7 @@ in [Distribution](docs/distribution.md); local release targets refuse publicatio
 CI runs tests on Linux, macOS, and Windows. Linux and macOS also exercise the
 built CLI through `make smoke`. Lint checks dead code both with and without
 tests, so test-only helpers cannot keep unused production paths alive.
-Snapshot validation uses GoReleaser 2.18.1, pinned in the CI workflow.
+Snapshot validation uses GoReleaser 2.18.2, pinned in the CI workflow.
 
 Implementation notes:
 
