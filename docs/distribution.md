@@ -36,7 +36,7 @@ Stamp the changelog section with the release date, merge it to protected
 `main`, then dispatch the unified workflow:
 
 ```bash
-gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.2
+gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.3
 ```
 
 The workflow freezes the protected source revision, creates the immutable
@@ -80,10 +80,10 @@ verify the exact manifest, aggregate checksums, Linux package provenance, and
 macOS signatures from a Mac:
 
 ```bash
-make verify-release TAG=v0.6.2
+make verify-release TAG=v0.6.3
 ```
 
-`make verify-release-macos TAG=v0.6.2` verifies already-downloaded macOS
+`make verify-release-macos TAG=v0.6.3` verifies already-downloaded macOS
 archives in `dist/`. These targets are read-only diagnostics; they never upload
 or alter a release.
 
