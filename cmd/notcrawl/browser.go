@@ -458,16 +458,3 @@ func formatMillis(ms int64) string {
 	}
 	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
 }
-
-func printTUIUsage(stdout io.Writer) error {
-	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
-	fs.SetOutput(stdout)
-	fs.Int("limit", 200, "maximum rows to load")
-	fs.String("kind", "all", "rows to browse: all, pages, databases")
-	fs.Bool("json", false, "print browser rows as JSON instead of opening the terminal UI")
-	_, _ = fmt.Fprintln(fs.Output(), "Usage of tui:")
-	fs.PrintDefaults()
-	_, _ = fmt.Fprintln(fs.Output())
-	_, _ = fmt.Fprintln(fs.Output(), tui.ControlsHelp())
-	return nil
-}
