@@ -247,7 +247,8 @@ func isNotcrawlGeneratedMarkdown(path string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(data), "\ngenerated_by: \"notcrawl\"\n")
+	text := string(data)
+	return strings.HasPrefix(text, "---\ngenerated_by: \"notcrawl\"\n") && strings.Contains(text, "\n---\n")
 }
 
 func isIgnorableRemoveDirError(err error) bool {
