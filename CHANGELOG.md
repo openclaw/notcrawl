@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject incomplete or wrong-type API block fields before writing their batch, preserving cached content, descendants, search, and Markdown instead of treating partial block objects as complete coverage.
+
 ## 0.6.3 - 2026-09-22
 
 **Highlights:** Safer Markdown cleanup and more reliable API mirror reconciliation.

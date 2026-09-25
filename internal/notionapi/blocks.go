@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/openclaw/notcrawl/internal/notiontext"
 	"github.com/openclaw/notcrawl/internal/store"
@@ -72,7 +73,23 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 		}
 		for _, block := range items {
 			typ := block.string("type")
+			if strings.TrimSpace(typ) == "" {
+				return count, warnings, fmt.Errorf("Notion block children returned an incomplete block: type must be a nonempty string")
+			}
 			typeBody := block[typ]
+			if _, ok := typeBody.(map[string]any); !ok {
+				return count, warnings, fmt.Errorf("Notion block children returned an incomplete block: type body must be an object")
+			}
+			if _, ok := block["has_children"].(bool); !ok {
+				return count, warnings, fmt.Errorf("Notion block children returned an incomplete block: has_children must be a boolean")
+			}
+			for _, field := range []string{"archived", "in_trash"} {
+				if value, exists := block[field]; exists {
+					if _, ok := value.(bool); !ok {
+						return count, warnings, fmt.Errorf("Notion block children returned an incomplete block: %s must be a boolean", field)
+					}
+				}
+			}
 			text := notiontext.Plain(typeBody)
 			raw := notiontext.MarshalRaw(block)
 			displayOrder++
