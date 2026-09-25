@@ -51,7 +51,7 @@ func (f *discoveryFixture) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if strings.HasPrefix(operation, "/blocks/") {
 		id := strings.Split(operation, "/")[2]
-		response["results"] = []any{obj{"id": id + "block", "type": "paragraph", "paragraph": obj{
+		response["results"] = []any{obj{"id": id + "block", "type": "paragraph", "has_children": false, "paragraph": obj{
 			"rich_text": []any{obj{"plain_text": id + "body"}},
 		}}}
 	} else if operation == "/comments" {

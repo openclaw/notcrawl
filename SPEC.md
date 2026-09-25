@@ -103,10 +103,15 @@ Official API success responses are limited to 8 MiB per HTTP response; oversized
 Official API pagination treats cursors as opaque values and rejects repeated cursors within each listing, without imposing a fixed page-count limit. Pagination failures must not mark an incomplete page sync complete or retire cached blocks that were not reached. Error messages identify the operation without including cursor values.
 
 Block listings at every depth and pagination step must contain a boolean
-`has_more`, a `results` array, and objects with nonempty string IDs. Invalid
-listings fail sync without retiring unseen blocks or pages or marking the page
-complete; previously committed batches remain searchable and exportable. A valid
-empty final listing still permits retirement after the whole walk succeeds.
+`has_more`, a `results` array, and objects with nonempty string IDs. Each block
+must have a nonempty string `type`, an object under that type's key, and a
+boolean `has_children`. When present, `archived` and `in_trash` must also be
+booleans. Empty type bodies and unknown block types remain accepted.
+Incomplete or malformed blocks fail sync before any block in their batch is
+written, preserving cached content and descendants. Invalid listings do not
+retire unseen blocks or pages or mark the page complete; previously committed
+batches remain searchable and exportable. A valid empty final listing still
+permits retirement after the whole walk succeeds.
 
 `sync --verbose` enables per-invocation stderr diagnostics for source phases and counts, with official API request attempts, endpoint classes, elapsed time, numeric HTTP statuses, and retry delays. Diagnostics use fixed labels and numeric fields, never credentials, headers, payloads, raw URLs, cursors, page identifiers, or upstream error text. Verbose mode replaces warning text with counts and sanitizes sync failures; stdout and non-verbose behavior remain unchanged.
 

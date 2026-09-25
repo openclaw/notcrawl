@@ -84,7 +84,7 @@ func TestAPIPagination(t *testing.T) {
 					case "opaque":
 						next = " opaque +/% cursor "
 					}
-					item := obj{"id": fmt.Sprintf("item-%d", call), "name": "Fixture", "type": "paragraph", "properties": obj{}, "paragraph": obj{"rich_text": []any{obj{"plain_text": "Fixture"}}}, "rich_text": []any{obj{"plain_text": "Fixture"}}}
+					item := obj{"id": fmt.Sprintf("item-%d", call), "name": "Fixture", "type": "paragraph", "has_children": false, "properties": obj{}, "paragraph": obj{"rich_text": []any{obj{"plain_text": "Fixture"}}}, "rich_text": []any{obj{"plain_text": "Fixture"}}}
 					w.Header().Set("Content-Type", "application/json")
 					_ = json.NewEncoder(w).Encode(obj{"results": []any{item}, "has_more": scenario.wantError || call < scenario.calls, "next_cursor": next})
 				}))
@@ -136,7 +136,7 @@ func TestBlockPaginationFailurePreservesArchive(t *testing.T) {
 				http.Error(w, "pagination did not stop", http.StatusInternalServerError)
 				return
 			}
-			fmt.Fprint(w, `{"results":[{"id":"partial","type":"paragraph","paragraph":{"rich_text":[]}}],"has_more":true,"next_cursor":"private-cursor-marker"}`)
+			fmt.Fprint(w, `{"results":[{"id":"partial","type":"paragraph","has_children":false,"paragraph":{"rich_text":[]}}],"has_more":true,"next_cursor":"private-cursor-marker"}`)
 		default:
 			t.Errorf("unexpected request %s", r.URL.Path)
 		}
