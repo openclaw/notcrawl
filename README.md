@@ -59,6 +59,8 @@ notcrawl sync --source api --verbose
 
 Verbose diagnostics go to stderr and report source phases, elapsed time, and counts. Official API sync also reports request attempts, endpoint classes, numeric HTTP statuses, and retry delays. No credentials, headers, request/response bodies, raw URLs, cursors, page identifiers, or upstream error text are logged. Warnings become counts and failures use a fixed message in verbose mode. Normal stdout is unchanged and may still contain local paths; without `--verbose`, the existing progress, warnings, and errors are unchanged. Desktop and MCP sync report source phases and counts, not per-request API traces.
 
+Official API requests have a 60-second timeout. Read-only requests retry transient failures, including request timeouts, up to four total attempts while the sync context remains active. Canceling the sync or reaching its caller deadline stops retries.
+
 Notion MCP can repair known incomplete pages, fetch a page by ID or URL, or run a bounded workspace search:
 
 ```sh
@@ -71,6 +73,8 @@ Without `--page` or `--query`, the MCP source retries known Desktop pages with m
 ## Work with the archive
 
 `notcrawl tui` opens a three-pane terminal browser for workspaces, teamspaces, pages, and databases. It supports keyboard and mouse navigation, filtering, sorting, local refresh, opening or copying the selected Notion URL, and local/remote state in the footer.
+
+API simple tables render as Markdown tables from their archived cell values. Tables without column headers receive an empty Markdown header; cell whitespace is normalized. Existing archives can export these tables without resyncing. Run `notcrawl maintain` to rebuild search entries for previously archived table cells.
 
 Database rows can be exported separately from the Markdown archive:
 

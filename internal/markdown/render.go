@@ -22,7 +22,7 @@ func renderBlocks(b *strings.Builder, pageID string, blocks []store.Block) {
 		store.SortBlockSiblings(children[parent])
 	}
 
-	renderChildren(b, pageID, children, 0)
+	renderChildren(b, pageID, children, "")
 	if len(children[pageID]) == 0 {
 		var loose []store.Block
 		for _, block := range blocks {
@@ -31,21 +31,56 @@ func renderBlocks(b *strings.Builder, pageID string, blocks []store.Block) {
 			}
 		}
 		for _, block := range loose {
-			renderBlock(b, block, 0)
+			renderBlock(b, block, "")
 		}
 	}
 }
 
-func renderChildren(b *strings.Builder, parentID string, children map[string][]store.Block, depth int) {
+func renderChildren(b *strings.Builder, parentID string, children map[string][]store.Block, indent string) {
 	for _, block := range children[parentID] {
-		renderBlock(b, block, depth)
-		renderChildren(b, block.ID, children, depth+1)
+		if block.Type == "table" && renderTable(b, block, children, indent) {
+			continue
+		}
+		renderBlock(b, block, indent)
+		childIndent := indent
+		switch block.Type {
+		case "bulleted_list", "bulleted_list_item", "to_do", "to_do_item":
+			childIndent += "  "
+		case "numbered_list", "numbered_list_item":
+			childIndent += "   "
+		case "quote":
+			childIndent += "> "
+		}
+		renderChildren(b, block.ID, children, childIndent)
 	}
 }
 
-func renderBlock(b *strings.Builder, block store.Block, depth int) {
+func renderBlock(b *strings.Builder, block store.Block, indent string) {
+	if block.Type == "quote" {
+		writePrefixed(b, fallback(notiontext.MarkdownEscape(block.Text), block.Type)+"\n\n", indent+"> ")
+		return
+	}
+	var content strings.Builder
+	renderBlockContent(&content, block)
+	writePrefixed(b, content.String(), indent)
+}
+
+func writePrefixed(b *strings.Builder, text, prefix string) {
+	for _, line := range strings.SplitAfter(text, "\n") {
+		if line == "" {
+			continue
+		}
+		if line == "\n" {
+			b.WriteString(strings.TrimRight(prefix, " "))
+		} else {
+			b.WriteString(prefix)
+		}
+		b.WriteString(line)
+	}
+}
+
+func renderBlockContent(b *strings.Builder, block store.Block) {
 	text := notiontext.MarkdownEscape(block.Text)
-	indent := strings.Repeat("  ", depth)
 	switch block.Type {
 	case store.BlockTypeNotionMCPMarkdown:
 		text = strings.Trim(block.Text, "\r\n")
@@ -60,17 +95,15 @@ func renderBlock(b *strings.Builder, block store.Block, depth int) {
 	case "sub_sub_header", "heading_3":
 		writeLine(b, "### "+text)
 	case "bulleted_list", "bulleted_list_item":
-		writeLine(b, indent+"- "+fallback(text, block.Type))
+		writeLine(b, "- "+fallback(text, block.Type))
 	case "numbered_list", "numbered_list_item":
-		writeLine(b, indent+"1. "+fallback(text, block.Type))
+		writeLine(b, "1. "+fallback(text, block.Type))
 	case "to_do", "to_do_item":
 		mark := " "
 		if todoChecked(block) {
 			mark = "x"
 		}
-		writeLine(b, indent+"- ["+mark+"] "+fallback(text, block.Type))
-	case "quote":
-		writeLine(b, "> "+fallback(text, block.Type))
+		writeLine(b, "- ["+mark+"] "+fallback(text, block.Type))
 	case "code":
 		b.WriteString("```text\n")
 		b.WriteString(text)
@@ -79,7 +112,15 @@ func renderBlock(b *strings.Builder, block store.Block, depth int) {
 		writeLine(b, "---")
 	case "image", "file", "pdf", "video", "figma", "drive":
 		writeLine(b, fmt.Sprintf("[%s: %s]", block.Type, fallback(text, block.ID)))
-	case "column", "column_list", "table", "table_row", "collection_view":
+	case "table_row":
+		if cells, ok := notiontext.TableRowCells(block.PropertiesJSON); ok {
+			for i, cell := range cells {
+				cells[i] = tableCellEscaper.Replace(cell)
+			}
+			text = strings.Join(cells, " | ")
+		}
+		writeLine(b, fallback(text, "[table_row]"))
+	case "column", "column_list", "collection_view":
 		if text != "" {
 			writeLine(b, text)
 		}

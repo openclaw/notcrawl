@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Retry request-local API timeouts within the existing four-attempt limit while still stopping promptly for caller cancellation or deadline expiry. Thanks @oddm643.
+- Render archived API simple tables in Markdown and include their cells in search, with FTS rebuild recovery for existing archives. Thanks @mihailmariusiondev.
+
 - Update CrawlKit to v0.16.6 for snapshot sidecar path hardening that rejects overlapping roots and nested destination directory symlinks, preventing writes or pruning outside the target while preserving literal whitespace in directory names.
 - Reject incomplete or wrong-type API block fields before writing their batch, preserving cached content, descendants, search, and Markdown instead of treating partial block objects as complete coverage.
 

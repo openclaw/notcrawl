@@ -98,6 +98,8 @@ containers do not have omission tombstones. This mirror policy treats omission
 as unavailable API coverage, not proof of deletion; Notion search does not
 guarantee an exhaustive inventory.
 
+Official API requests retain a 60-second client timeout and a four-attempt limit. Request-local timeouts, including response-body stalls, may retry only for replay-safe reads (GET/HEAD, search, and database/data-source queries) while the caller context is active. Caller cancellation or deadline expiry stops retries.
+
 Official API success responses are limited to 8 MiB per HTTP response; oversized bodies fail without retrying and incomplete pages remain eligible for repair. This limit does not apply to whole-page Notion MCP responses.
 
 Official API pagination treats cursors as opaque values and rejects repeated cursors within each listing, without imposing a fixed page-count limit. Pagination failures must not mark an incomplete page sync complete or retire cached blocks that were not reached. Error messages identify the operation without including cursor values.
@@ -199,7 +201,7 @@ last_edited_time: ...
 ```
 
 The body renders blocks into normalized Markdown. Unsupported blocks should be
-represented with concise placeholders, not silently dropped.
+represented with concise placeholders, not silently dropped. API simple tables use archived `table_row.cells`, sibling order, `table_width`, and `has_column_header` to render GFM tables. Tables without column headers get an empty header row. Cells use normalized plain text with Markdown/HTML escaping; row-header styling and rich-text formatting are not preserved. Invalid table shapes fall back to visible placeholders and available row text. New API ingestion indexes cell text; FTS rebuilds also recover cells from older archives with empty block text.
 
 ## Git Share
 
