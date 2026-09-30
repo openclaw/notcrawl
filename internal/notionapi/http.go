@@ -184,9 +184,9 @@ func shouldRetryTransportError(ctx context.Context, method, path string, err err
 	if err == nil || ctx.Err() != nil {
 		return false
 	}
+	// A client request timeout is retryable while the parent sync is still alive.
 	return isReplaySafeRequest(method, path) &&
 		!errors.Is(err, context.Canceled) &&
-		!errors.Is(err, context.DeadlineExceeded) &&
 		!errors.Is(err, errSuccessBodyTooLarge)
 }
 

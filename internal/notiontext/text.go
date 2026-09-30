@@ -176,7 +176,7 @@ func walk(v any, parts *[]string) {
 			*parts = append(*parts, text)
 			return
 		}
-		for _, key := range []string{"name", "title", "rich_text", "text"} {
+		for _, key := range []string{"name", "title", "rich_text", "text", "cells"} {
 			if value, ok := x[key]; ok {
 				walk(value, parts)
 			}

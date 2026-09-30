@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+
+	"github.com/openclaw/notcrawl/internal/notiontext"
 )
 
 func (s *Store) refreshCommentFTS(ctx context.Context, commentID string) error {
@@ -88,11 +90,17 @@ func (s *Store) refreshPageFTS(ctx context.Context, pageID string) error {
 func pageBlockTextParts(pageID string, blocks []Block, apiBlocksSynced bool) []string {
 	blocks = PreferredPageContentBlocks(blocks, apiBlocksSynced)
 	children := map[string][]Block{}
-	for _, block := range blocks {
+	for i := range blocks {
+		block := &blocks[i]
+		if block.Type == "table_row" && strings.TrimSpace(block.Text) == "" {
+			if cells, ok := notiontext.TableRowCells(block.PropertiesJSON); ok {
+				block.Text = strings.Join(cells, " ")
+			}
+		}
 		if block.ID == pageID {
 			continue
 		}
-		children[block.ParentID] = append(children[block.ParentID], block)
+		children[block.ParentID] = append(children[block.ParentID], *block)
 	}
 	for parent := range children {
 		SortBlockSiblings(children[parent])

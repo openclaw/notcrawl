@@ -135,3 +135,10 @@ func TestShortIDKeepsEnoughEntropyForDesktopIDs(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestPlainTableCells(t *testing.T) {
+	got := PlainFromJSON(`{"cells":[[{"plain_text":"moonstone","text":{"content":"moonstone"}}],[],[{"text":{"content":"value"}}]]}`)
+	if got != "moonstone value" {
+		t.Fatalf("table text = %q", got)
+	}
+}
