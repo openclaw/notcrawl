@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update SQLite to v1.60.1, libc to v1.77.1, go-strftime to v1.1.0, and the pinned CodeQL and TruffleHog actions while retaining the Go 1.27.1 minimum.
+
 - Retry request-local API timeouts within the existing four-attempt limit while still stopping promptly for caller cancellation or deadline expiry. Thanks @oddm643.
 - Render archived API simple tables in Markdown and include their cells in search, with FTS rebuild recovery for existing archives. Thanks @mihailmariusiondev.
 
