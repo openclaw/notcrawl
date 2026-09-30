@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Update CrawlKit to v0.16.6 for snapshot sidecar path hardening that rejects overlapping roots and nested destination directory symlinks, preventing writes or pruning outside the target while preserving literal whitespace in directory names.
 - Reject incomplete or wrong-type API block fields before writing their batch, preserving cached content, descendants, search, and Markdown instead of treating partial block objects as complete coverage.
 
 ## 0.6.3 - 2026-09-22
