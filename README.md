@@ -20,7 +20,7 @@ Homebrew is the smallest install path on macOS and Linux:
 brew install openclaw/tap/notcrawl
 ```
 
-GitHub Releases also provide signed and notarized macOS archives, Linux archives, and `.deb` and `.rpm` packages. Download the appropriate file from the [latest release](https://github.com/openclaw/notcrawl/releases/latest).
+GitHub Releases also provide signed and notarized macOS archives (macOS 13.0 or newer), Linux archives, and `.deb` and `.rpm` packages. Download the appropriate file from the [latest release](https://github.com/openclaw/notcrawl/releases/latest).
 
 ## Quick start
 

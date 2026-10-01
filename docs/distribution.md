@@ -9,6 +9,12 @@ Official macOS archives are signed with hardened runtime and stable identifier
 `org.openclaw.notcrawl`, then notarized by Apple. Ordinary local builds and
 GoReleaser snapshots remain credential-free.
 
+The macOS minimum is macOS 13.0 on both Intel and Apple Silicon, matching the
+Go 1.27 toolchain floor. The release builds use `CGO_ENABLED=0`. Before dispatching
+a release, inspect both macOS snapshot binaries with
+`otool -l <binary> | grep -A3 LC_BUILD_VERSION` and require `minos 13.0`;
+repeat that check on the downloaded release binaries.
+
 ## Local Checks
 
 Run the complete local gate before preparing a release:
@@ -36,7 +42,7 @@ Stamp the changelog section with the release date, merge it to protected
 `main`, then dispatch the unified workflow:
 
 ```bash
-gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.3
+gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.4
 ```
 
 The workflow freezes the protected source revision, creates the immutable
@@ -80,10 +86,10 @@ verify the exact manifest, aggregate checksums, Linux package provenance, and
 macOS signatures from a Mac:
 
 ```bash
-make verify-release TAG=v0.6.3
+make verify-release TAG=v0.6.4
 ```
 
-`make verify-release-macos TAG=v0.6.3` verifies already-downloaded macOS
+`make verify-release-macos TAG=v0.6.4` verifies already-downloaded macOS
 archives in `dist/`. These targets are read-only diagnostics; they never upload
 or alter a release.
 
