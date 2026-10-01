@@ -2,13 +2,15 @@
 
 ## Unreleased
 
-- Update SQLite to v1.60.1, libc to v1.77.1, go-strftime to v1.1.0, and the pinned CodeQL and TruffleHog actions while retaining the Go 1.27.1 minimum.
+## 0.6.4 - 2026-09-30
 
-- Retry request-local API timeouts within the existing four-attempt limit while still stopping promptly for caller cancellation or deadline expiry. Thanks @oddm643.
+**Highlights:** Restore API tables in Markdown and search, and preserve cached content during incomplete or stalled API responses.
+
 - Render archived API simple tables in Markdown and include their cells in search, with FTS rebuild recovery for existing archives. Thanks @mihailmariusiondev.
-
-- Update CrawlKit to v0.16.6 for snapshot sidecar path hardening that rejects overlapping roots and nested destination directory symlinks, preventing writes or pruning outside the target while preserving literal whitespace in directory names.
 - Reject incomplete or wrong-type API block fields before writing their batch, preserving cached content, descendants, search, and Markdown instead of treating partial block objects as complete coverage.
+- Retry request-local API timeouts within the existing four-attempt limit while still stopping promptly for caller cancellation or deadline expiry. Thanks @oddm643.
+- Update CrawlKit to v0.16.6 for snapshot sidecar path hardening that rejects overlapping roots and nested destination directory symlinks, preventing writes or pruning outside the target while preserving literal whitespace in directory names.
+- Update SQLite to v1.60.1, libc to v1.77.1, go-strftime to v1.1.0, and the pinned CodeQL and TruffleHog actions while retaining the Go 1.27.1 minimum.
 
 ## 0.6.3 - 2026-09-22
 
