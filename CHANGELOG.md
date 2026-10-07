@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update the pinned Release Drafter actions to v7.9.0 and dead-code tooling to v0.51.0; retain the Go 1.27.1 minimum.
+
 ## 0.6.4 - 2026-09-30
 
 **Highlights:** Restore API tables in Markdown and search, and preserve cached content during incomplete or stalled API responses.

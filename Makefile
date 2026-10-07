@@ -4,7 +4,7 @@ BINARY ?= bin/notcrawl
 CLI = $(if $(filter /%,$(BINARY)),$(BINARY),./$(BINARY))
 TAG ?=
 ASSET_DIR ?= dist/release-assets
-DEADCODE_VERSION = v0.50.0
+DEADCODE_VERSION = v0.51.0
 
 .PHONY: help build test test-release run fmt fmt-check deps lint smoke check release-notes release-check snapshot snapshot-release release-snapshot release release-artifacts release-macos verify-release verify-release-macos
 
