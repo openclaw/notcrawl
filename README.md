@@ -208,7 +208,7 @@ See [`SPEC.md`](SPEC.md) for the data model and archive contracts. Maintainers c
 
 ## Development
 
-Go 1.27.1 or newer is required.
+Go 1.27.1 or newer is required. Builds and CI select the patched Go 1.27.2 toolchain through `go.mod`.
 
 ```sh
 make build
