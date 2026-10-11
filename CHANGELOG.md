@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.6.5 - 2026-10-11
+
+**Highlights:** Address Go standard-library security vulnerabilities and refresh dependencies and release tooling.
+
 - Select Go 1.27.2 for builds and CI to address standard-library vulnerabilities while retaining the Go 1.27.1 minimum; refresh terminal/text dependencies and SQLite compiler tooling.
 - Update the pinned Release Drafter actions to v7.9.0 and dead-code tooling to v0.51.0; retain the Go 1.27.1 minimum.
 
