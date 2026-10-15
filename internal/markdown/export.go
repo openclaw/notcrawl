@@ -108,8 +108,11 @@ func (e Exporter) writePage(ctx context.Context, paths pathResolver, page store.
 	page.Icon, page.Cover = projected["icon"], projected["cover"]
 	page.PropertiesJSON, page.RawJSON = projected["properties_json"], projected["raw_json"]
 	for i := range blocks {
+		// Desktop link destinations live under source, outside the generic URL fields.
+		target, _ := linkedBlockContent(blocks[i])
 		projected, err := notiontext.ExportFields(map[string]string{
 			"source": blocks[i].Source,
+			"url":    target,
 			"text":   blocks[i].Text, "properties_json": blocks[i].PropertiesJSON,
 			"raw_json": blocks[i].RawJSON, "content_json": blocks[i].ContentJSON,
 			"format_json": blocks[i].FormatJSON,

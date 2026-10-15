@@ -74,6 +74,8 @@ Without `--page` or `--query`, the MCP source retries known Desktop pages with m
 
 `notcrawl tui` opens a three-pane terminal browser for workspaces, teamspaces, pages, and databases. It supports keyboard and mouse navigation, filtering, sorting, local refresh, opening or copying the selected Notion URL, and local/remote state in the footer.
 
+Markdown exports preserve archived HTTP(S) destinations for bookmarks, embeds, link previews, tweets, and videos, alongside available text or captions. Existing archives can be re-exported without resyncing. These blocks remain links; export does not fetch third-party page or media content.
+
 API simple tables render as Markdown tables from their archived cell values. Tables without column headers receive an empty Markdown header; cell whitespace is normalized. Existing archives can export these tables without resyncing. Run `notcrawl maintain` to rebuild search entries for previously archived table cells.
 
 Database rows can be exported separately from the Markdown archive:
