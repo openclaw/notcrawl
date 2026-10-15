@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Update CrawlKit to v0.17.0, Go support dependencies, and dead-code tooling while retaining the Go 1.27.1 minimum and patched Go 1.27.2 toolchain.
+- Refresh CodeQL, TruffleHog, and Release Drafter actions; group matching action updates and expose a nonpublishing release dry run. Thanks @dependabot and @vincentkoc.
+
 ## 0.6.5 - 2026-10-11
 
 **Highlights:** Address Go standard-library security vulnerabilities and refresh dependencies and release tooling.
