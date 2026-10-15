@@ -36,6 +36,15 @@ make snapshot-release
 `make release`, `make release-artifacts`, and `make release-macos` deliberately
 refuse local publication and print the official workflow command.
 
+To verify the current default branch through the shared release pipeline without
+creating a tag or publishing a release, dispatch a dry run with the current version:
+
+```bash
+gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.5 -F dry_run=true
+```
+
+The dry run builds, signs, and verifies artifacts but skips publication.
+
 ## Official Release
 
 Stamp the changelog section with the release date, merge it to protected
