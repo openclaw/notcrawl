@@ -80,6 +80,9 @@ func writePrefixed(b *strings.Builder, text, prefix string) {
 }
 
 func renderBlockContent(b *strings.Builder, block store.Block) {
+	if renderLinkedBlock(b, block) {
+		return
+	}
 	text := notiontext.MarkdownEscape(block.Text)
 	switch block.Type {
 	case store.BlockTypeNotionMCPMarkdown:

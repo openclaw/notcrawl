@@ -4,6 +4,7 @@
 
 - Update CrawlKit to v0.17.0, Go support dependencies, and dead-code tooling while retaining the Go 1.27.1 minimum and patched Go 1.27.2 toolchain.
 - Refresh CodeQL, TruffleHog, and Release Drafter actions; group matching action updates and expose a nonpublishing release dry run. Thanks @dependabot and @vincentkoc.
+- Preserve archived bookmark, embed, link-preview, tweet, and video destinations in Markdown exports, including API captions. Thanks @transitive-bullshit.
 
 ## 0.6.5 - 2026-10-11
 
