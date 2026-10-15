@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep CodeQL initialization and analysis on the same v4.38.3 action revision, and group their future dependency updates to prevent incompatible security-analysis steps. Thanks @dependabot.
+
 ## 0.6.5 - 2026-10-11
 
 **Highlights:** Address Go standard-library security vulnerabilities and refresh dependencies and release tooling.
