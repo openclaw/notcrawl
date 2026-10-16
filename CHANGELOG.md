@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update SQLite's libc dependency to v1.79.0 and refresh the upstream pprof test dependency while retaining the Go 1.27.1 minimum and Go 1.27.2 build toolchain.
+
 ## 0.6.6 - 2026-10-16
 
 **Highlights:** Preserve archived link destinations and captions in Markdown exports, and refresh dependencies and release tooling.
