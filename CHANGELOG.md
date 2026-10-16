@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+## 0.6.6 - 2026-10-16
+
+**Highlights:** Preserve archived link destinations and captions in Markdown exports, and refresh dependencies and release tooling.
+
+- Preserve archived bookmark, embed, link-preview, tweet, and video destinations in Markdown exports, including API captions. Thanks @transitive-bullshit.
 - Update CrawlKit to v0.17.0, Go support dependencies, and dead-code tooling while retaining the Go 1.27.1 minimum and patched Go 1.27.2 toolchain.
 - Refresh CodeQL, TruffleHog, and Release Drafter actions; group matching action updates and expose a nonpublishing release dry run. Thanks @dependabot and @vincentkoc.
-- Preserve archived bookmark, embed, link-preview, tweet, and video destinations in Markdown exports, including API captions. Thanks @transitive-bullshit.
 - Refresh the GoReleaser and GitHub App token actions while retaining the pinned GoReleaser binary version. Thanks @dependabot.
 
 ## 0.6.5 - 2026-10-11
