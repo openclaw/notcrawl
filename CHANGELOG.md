@@ -2,8 +2,12 @@
 
 ## Unreleased
 
-- Update CrawlKit to v0.17.1 and refresh govulncheck, CodeQL, and TruffleHog security analysis tooling while retaining the Go 1.27.1 minimum and Go 1.27.2 build toolchain.
+## 0.6.7 - 2026-10-20
+
+**Highlights:** Refresh SQLite dependencies, CrawlKit, and security analysis tooling.
+
 - Update SQLite's libc dependency to v1.79.0 and refresh the upstream pprof test dependency while retaining the Go 1.27.1 minimum and Go 1.27.2 build toolchain.
+- Update CrawlKit to v0.17.1 and refresh govulncheck, CodeQL, and TruffleHog security analysis tooling while retaining the Go 1.27.1 minimum and Go 1.27.2 build toolchain.
 
 ## 0.6.6 - 2026-10-16
 
