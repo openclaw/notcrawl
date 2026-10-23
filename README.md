@@ -80,6 +80,8 @@ API simple tables render as Markdown tables from their archived cell values. Tab
 
 API text preserves word and punctuation boundaries across inline formatting changes. Run `notcrawl sync --source api` and then `notcrawl export-md` to repair text previously archived with extra spaces between formatted spans.
 
+API code blocks retain indentation and line breaks, with Markdown fences that safely contain embedded backticks. The same resync and export commands repair previously flattened code blocks.
+
 Database rows can be exported separately from the Markdown archive:
 
 ```sh

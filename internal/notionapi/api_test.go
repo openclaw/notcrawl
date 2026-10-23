@@ -1166,3 +1166,31 @@ func (p *repeatingListCursorPager) serve(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"object":"list","results":[],"has_more":true,"next_cursor":%q}`, p.cursor)
 }
+
+func TestWalkBlocksPreservesCodeBlockWhitespace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"object":"list","has_more":false,"results":[
+			{"object":"block","id":"code1","type":"code","has_children":false,
+			 "code":{"language":"python","rich_text":[{"type":"text","plain_text":"def f():\n    return 1\n","text":{"content":"def f():\n    return 1\n"}}]}}
+		]}`))
+	}))
+	defer server.Close()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
+	ctx := context.Background()
+	if _, _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := st.PageBlocks(ctx, "page1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Text != "def f():\n    return 1\n" {
+		t.Fatalf("code block text = %#v", blocks)
+	}
+}

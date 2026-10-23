@@ -108,9 +108,14 @@ func renderBlockContent(b *strings.Builder, block store.Block) {
 		}
 		writeLine(b, "- ["+mark+"] "+fallback(text, block.Type))
 	case "code":
-		b.WriteString("```text\n")
+		text = strings.ReplaceAll(block.Text, "\r\n", "\n")
+		fence := codeFence(text)
+		b.WriteString(fence + "text\n")
 		b.WriteString(text)
-		b.WriteString("\n```\n\n")
+		if !strings.HasSuffix(text, "\n") {
+			b.WriteByte('\n')
+		}
+		b.WriteString(fence + "\n\n")
 	case "divider":
 		writeLine(b, "---")
 	case "image", "file", "pdf", "video", "figma", "drive":
@@ -168,4 +173,19 @@ func fallback(s, fallback string) string {
 		return s
 	}
 	return fallback
+}
+
+// codeFence returns a backtick fence longer than any backtick run in text, so
+// code containing ``` cannot close the fence early (CommonMark fenced blocks).
+func codeFence(text string) string {
+	longest, run := 0, 0
+	for _, r := range text {
+		if r == '`' {
+			run++
+			longest = max(longest, run)
+		} else {
+			run = 0
+		}
+	}
+	return strings.Repeat("`", max(3, longest+1))
 }
