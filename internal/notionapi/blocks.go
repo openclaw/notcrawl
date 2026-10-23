@@ -91,6 +91,9 @@ func (c Client) walkBlocksAt(ctx context.Context, st *store.Store, pageID, paren
 				}
 			}
 			text := notiontext.Plain(typeBody)
+			if typ == "code" {
+				text = notiontext.CodeText(typeBody)
+			}
 			raw := notiontext.MarshalRaw(block)
 			displayOrder++
 			batch = append(batch, store.Block{

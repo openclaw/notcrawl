@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Preserve whitespace in API-synced code blocks and use safe Markdown fences for embedded backticks. Thanks @parth-garg01.
 - Join Notion API rich-text segments without inserted spaces so formatted spans no longer produce text like `world !` or `foo ()`. Thanks @parth-garg01.
 
 ## 0.6.8 - 2026-10-20
