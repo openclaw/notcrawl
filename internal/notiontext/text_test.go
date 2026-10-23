@@ -142,3 +142,25 @@ func TestPlainTableCells(t *testing.T) {
 		t.Fatalf("table text = %q", got)
 	}
 }
+
+func TestPlainJoinsRichTextSegmentsWithoutSeparators(t *testing.T) {
+	got := PlainFromJSON(`{"rich_text":[{"plain_text":"Hello, "},{"plain_text":"world","annotations":{"bold":true}},{"plain_text":"!"},{"plain_text":" see "},{"plain_text":"foo","annotations":{"code":true}},{"plain_text":"()"}]}`)
+	if want := "Hello, world! see foo()"; got != want {
+		t.Fatalf("got %q; want %q", got, want)
+	}
+	got = PlainFromJSON(`{"rich_text":[{"text":{"content":"wor"}},{"text":{"content":"d"}}]}`)
+	if want := "word"; got != want {
+		t.Fatalf("got %q; want %q", got, want)
+	}
+}
+
+func TestPlainKeepsStructuralSeparators(t *testing.T) {
+	for _, raw := range []string{
+		`{"cells":[[{"plain_text":"first"},{"plain_text":" cell"}],[{"plain_text":"second"},{"plain_text":" cell"}]]}`,
+		`{"title":[["first cell"],["second cell"]]}`,
+	} {
+		if got := PlainFromJSON(raw); got != "first cell second cell" {
+			t.Errorf("PlainFromJSON(%s) = %q", raw, got)
+		}
+	}
+}
