@@ -644,6 +644,117 @@ max_pages = 10
 	}
 }
 
+func TestSyncAllDiscoversThroughNotionMCPWithoutDesktop(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "notcrawl.db")
+	seedID := "11111111-1111-1111-1111-111111111111"
+	childID := "22222222-2222-2222-2222-222222222222"
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, store.Page{ID: seedID, Title: "Seed", Alive: true, Source: store.SourceDesktop, SyncedAt: store.NowMS()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			ID     any            `json:"id"`
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		switch request.Method {
+		case "initialize":
+			writeMainRPCResult(w, request.ID, map[string]any{"protocolVersion": "2025-03-26"})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusNoContent)
+		case "tools/list":
+			writeMainRPCResult(w, request.ID, map[string]any{"tools": []map[string]any{
+				{"name": "notion_fetch", "_meta": map[string]any{"connector_id": "test-notion", "connector_name": "Notion"}},
+				{"name": "notion_search", "_meta": map[string]any{"connector_id": "test-notion", "connector_name": "Notion"}},
+			}})
+		case "tools/call":
+			arguments, _ := request.Params["arguments"].(map[string]any)
+			id, _ := arguments["id"].(string)
+			text := "<page><content>Child body</content></page>"
+			if id == seedID {
+				text = `<page><content>Seed links <page url="https://www.notion.so/` + strings.ReplaceAll(childID, "-", "") + `">Child</page></content></page>`
+			}
+			payload, _ := json.Marshal(map[string]any{"metadata": map[string]any{"type": "page"}, "title": "Fetched " + id, "text": text})
+			writeMainRPCResult(w, request.ID, map[string]any{
+				"isError": false,
+				"content": []map[string]any{{"type": "text", "text": string(payload)}},
+			})
+		default:
+			http.Error(w, "unexpected method", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	authPath := filepath.Join(dir, "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"tokens":{"access_token":"test-token","account_id":"test-account"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "config.toml")
+	configBody := fmt.Sprintf(`db_path = %q
+cache_dir = %q
+markdown_dir = %q
+
+[notion.desktop]
+enabled = false
+path = %q
+
+[notion.api]
+enabled = false
+
+[notion.mcp]
+enabled = true
+discover = true
+base_url = %q
+auth_path = %q
+connector_id = "test-notion"
+max_pages = 10
+`, dbPath, filepath.Join(dir, "cache"), filepath.Join(dir, "pages"), filepath.Join(dir, "no-notion-app"), server.URL, authPath)
+	if err := os.WriteFile(configPath, []byte(configBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	originalClientFactory := newNotionMCPClient
+	newNotionMCPClient = func(cfg config.Config) notionmcp.Client {
+		client := originalClientFactory(cfg)
+		client.AllowUnsafeBaseURL = true
+		return client
+	}
+	defer func() {
+		newNotionMCPClient = originalClientFactory
+	}()
+	var stdout, stderr bytes.Buffer
+	err = run(ctx, []string{"--config", configPath, "sync", "--source", "all"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("sync --source all failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if strings.Contains(stdout.String(), "desktop:") || !strings.Contains(stdout.String(), "notion-mcp: candidates=2 pages=2 empty=0 failed=0") {
+		t.Fatalf("unexpected stdout:\n%s", stdout.String())
+	}
+	st, err = store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	blocks, err := st.PageBlocks(ctx, childID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Text != "Child body" {
+		t.Fatalf("linked child was not archived: %#v", blocks)
+	}
+}
+
 func writeMainRPCResult(w http.ResponseWriter, id any, result any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})

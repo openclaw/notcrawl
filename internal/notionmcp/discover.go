@@ -125,6 +125,13 @@ func (c Client) discover(
 				return summary, err
 			}
 			if synced {
+				stored, ok, err := st.Block(ctx, markdownBlockID(candidate.ID))
+				if err != nil {
+					return summary, err
+				}
+				if ok {
+					enqueueLinks(queue, fetchResult{Text: stored.Text}, candidate.ID, existing)
+				}
 				continue
 			}
 		}
@@ -135,15 +142,7 @@ func (c Client) discover(
 			summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP fetch failed for %s: %v", candidate.ID, err))
 			continue
 		}
-		for _, id := range linkedIDs(result, candidate.ID) {
-			queue.add(pageCandidate{ID: id, FetchRef: id, Page: existing[id]})
-		}
-		if kind := metadataType(result.Metadata); kind != "" && kind != "page" {
-			if err := st.SetSyncState(ctx, store.SourceNotionMCP, "page_content", candidate.ID, cursor+":"+kind); err != nil {
-				return summary, err
-			}
-			continue
-		}
+		enqueueLinks(queue, result, candidate.ID, existing)
 		candidate.Cursor = cursor
 		if err := persistFetch(ctx, st, candidate, result, now, &summary); err != nil {
 			return summary, err
@@ -233,6 +232,12 @@ func sortedPages(existing map[string]store.Page) []store.Page {
 	return out
 }
 
+func enqueueLinks(queue *crawlQueue, result fetchResult, selfID string, existing map[string]store.Page) {
+	for _, id := range linkedIDs(result, selfID) {
+		queue.add(pageCandidate{ID: id, FetchRef: id, Page: existing[id]})
+	}
+}
+
 func linkedIDs(result fetchResult, selfID string) []string {
 	seen := map[string]bool{selfID: true}
 	var out []string
@@ -307,17 +312,6 @@ func sortedKeys[V any](values map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func metadataType(raw json.RawMessage) string {
-	var meta struct {
-		Type   string `json:"type"`
-		Object string `json:"object"`
-	}
-	if len(raw) == 0 || json.Unmarshal(raw, &meta) != nil {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(firstNonEmpty(meta.Type, meta.Object)))
 }
 
 func metadataLastEdited(raw json.RawMessage) int64 {
