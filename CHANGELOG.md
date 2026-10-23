@@ -2,12 +2,18 @@
 
 ## Unreleased
 
-- Update CrawlKit to v0.17.2 and SQLite to v1.61.0 while retaining the Go 1.27.1 minimum and Go 1.27.3 build toolchain.
+## 0.6.9 - 2026-10-23
+
+**Highlights:** Preserve API-synced code blocks and rich-text spacing, and refresh CrawlKit and SQLite.
 
 ### Fixed
 
 - Preserve whitespace in API-synced code blocks and use safe Markdown fences for embedded backticks. Thanks @parth-garg01.
 - Join Notion API rich-text segments without inserted spaces so formatted spans no longer produce text like `world !` or `foo ()`. Thanks @parth-garg01.
+
+### Dependencies
+
+- Update CrawlKit to v0.17.2 and SQLite to v1.61.0 while retaining the Go 1.27.1 minimum and Go 1.27.3 build toolchain.
 
 ## 0.6.8 - 2026-10-20
 
