@@ -72,7 +72,7 @@ func (c Client) discover(
 	if err != nil {
 		return summary, err
 	}
-	sweepRecentEdits(ctx, gateway, tools, since, existing, queue, &summary)
+	sweepRecentEdits(ctx, gateway, tools, since, sweepPageSize(tools.SearchSchema, opts.Limit), existing, queue, &summary)
 	for _, ref := range opts.PageIDs {
 		ref = strings.TrimSpace(ref)
 		if ref == "" {
@@ -89,7 +89,7 @@ func (c Client) discover(
 		if query == "" {
 			continue
 		}
-		results, err := gateway.searchPages(ctx, tools.Search, query, defaultSweepPageSize, nil)
+		results, _, err := gateway.searchPages(ctx, tools.Search, query, defaultSweepPageSize, nil)
 		if err != nil {
 			summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP search failed for %q: %v", query, err))
 			continue
@@ -162,19 +162,23 @@ func sweepRecentEdits(
 	gateway *gatewayClient,
 	tools notionToolset,
 	since time.Time,
+	pageSize int,
 	existing map[string]store.Page,
 	queue *crawlQueue,
 	summary *Summary,
 ) {
-	filter := lastEditedFilter(tools.SearchSchema, since)
-	if filter == nil {
-		summary.Warnings = append(summary.Warnings, "Notion MCP search tool exposes no last-edited date filter; recent edits are discovered only through links and --query")
+	arguments := recentEditArguments(tools.SearchSchema, since)
+	if len(arguments) == 0 {
+		summary.Warnings = append(summary.Warnings, "Notion MCP search tool exposes neither a last-edited sort nor a last-edited date filter; recent edits are discovered only through links and --query")
 		return
 	}
-	results, err := gateway.searchPages(ctx, tools.Search, "", sweepPageSize(tools.SearchSchema), filter)
+	results, notices, err := gateway.searchPages(ctx, tools.Search, "", pageSize, arguments)
 	if err != nil {
 		summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP recent-edit search failed: %v", err))
 		return
+	}
+	for _, notice := range notices {
+		summary.Warnings = append(summary.Warnings, "Notion MCP recent-edit search notice: "+notice)
 	}
 	for _, result := range results {
 		candidate := searchCandidate(result, existing)
@@ -266,6 +270,32 @@ func linkedIDs(result fetchResult, selfID string) []string {
 	return out
 }
 
+func recentEditArguments(schema json.RawMessage, since time.Time) map[string]any {
+	arguments := map[string]any{}
+	if sort := lastEditedSort(schema); sort != "" {
+		arguments["sort"] = sort
+	}
+	if filter := lastEditedFilter(schema, since); filter != nil {
+		arguments["filters"] = filter
+	}
+	return arguments
+}
+
+func lastEditedSort(schema json.RawMessage) string {
+	var sort struct {
+		Enum []string `json:"enum"`
+	}
+	if raw := schemaProperties(schema)["sort"]; len(raw) == 0 || json.Unmarshal(raw, &sort) != nil {
+		return ""
+	}
+	for _, option := range sort.Enum {
+		if strings.Contains(strings.ToLower(option), "edit") {
+			return option
+		}
+	}
+	return ""
+}
+
 func lastEditedFilter(schema json.RawMessage, since time.Time) map[string]any {
 	filters := schemaProperties(schemaProperties(schema)["filters"])
 	for _, name := range sortedKeys(filters) {
@@ -275,21 +305,25 @@ func lastEditedFilter(schema json.RawMessage, since time.Time) map[string]any {
 		}
 		for _, key := range sortedKeys(schemaProperties(filters[name])) {
 			if strings.Contains(strings.ToLower(key), "start") {
-				return map[string]any{name: map[string]any{key: since.Format(time.RFC3339)}}
+				return map[string]any{name: map[string]any{key: since.Format(time.DateOnly)}}
 			}
 		}
 	}
 	return nil
 }
 
-func sweepPageSize(schema json.RawMessage) int {
+func sweepPageSize(schema json.RawMessage, limit int) int {
+	size := defaultSweepPageSize
 	var node struct {
 		Maximum int `json:"maximum"`
 	}
 	if raw := schemaProperties(schema)["page_size"]; len(raw) > 0 && json.Unmarshal(raw, &node) == nil && node.Maximum > 0 {
-		return node.Maximum
+		size = node.Maximum
 	}
-	return defaultSweepPageSize
+	if limit > 0 {
+		size = min(size, max(1, limit/2))
+	}
+	return size
 }
 
 func schemaProperties(schema json.RawMessage) map[string]json.RawMessage {

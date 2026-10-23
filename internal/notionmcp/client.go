@@ -209,7 +209,7 @@ func (c Client) candidates(
 				pageSize = remaining
 			}
 		}
-		results, err := gateway.searchPages(ctx, tools.Search, query, pageSize, nil)
+		results, _, err := gateway.searchPages(ctx, tools.Search, query, pageSize, nil)
 		if err != nil {
 			return nil, err
 		}

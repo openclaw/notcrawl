@@ -176,7 +176,7 @@ func (g *gatewayClient) fetchPage(ctx context.Context, toolName, ref string) (fe
 	return result, nil
 }
 
-func (g *gatewayClient) searchPages(ctx context.Context, toolName, query string, pageSize int, filters map[string]any) ([]searchResult, error) {
+func (g *gatewayClient) searchPages(ctx context.Context, toolName, query string, pageSize int, extra map[string]any) ([]searchResult, []string, error) {
 	arguments := map[string]any{
 		"query":                query,
 		"query_type":           "internal",
@@ -184,20 +184,25 @@ func (g *gatewayClient) searchPages(ctx context.Context, toolName, query string,
 		"page_size":            pageSize,
 		"max_highlight_length": 0,
 	}
-	if len(filters) > 0 {
-		arguments["filters"] = filters
+	for key, value := range extra {
+		arguments[key] = value
 	}
 	raw, err := g.callToolText(ctx, toolName, arguments)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var result struct {
-		Results []searchResult `json:"results"`
+		Results []searchResult    `json:"results"`
+		Notices []json.RawMessage `json:"notices"`
 	}
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return nil, fmt.Errorf("failed to decode Notion MCP search response: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode Notion MCP search response: %w", err)
 	}
-	return result.Results, nil
+	notices := make([]string, 0, len(result.Notices))
+	for _, notice := range result.Notices {
+		notices = append(notices, string(notice))
+	}
+	return result.Results, notices, nil
 }
 
 func (g *gatewayClient) callToolText(ctx context.Context, name string, arguments map[string]any) (string, error) {
@@ -346,10 +351,14 @@ func resolveNotionTools(tools []toolDefinition, connectorID string) (notionTools
 		}
 		switch {
 		case strings.Contains(identity, "fetch"):
-			fetch = tool.Name
+			if fetch == "" || len(tool.Name) < len(fetch) {
+				fetch = tool.Name
+			}
 		case strings.Contains(identity, "search"):
-			search = tool.Name
-			searchSchema = tool.InputSchema
+			if search == "" || len(tool.Name) < len(search) {
+				search = tool.Name
+				searchSchema = tool.InputSchema
+			}
 		}
 	}
 	if fetch == "" {

@@ -82,6 +82,7 @@ func (f *crawlFixture) serve(w http.ResponseWriter, r *http.Request) {
 		if f.withSchema {
 			search["inputSchema"] = map[string]any{"type": "object", "properties": map[string]any{
 				"query":     map[string]any{"type": "string"},
+				"sort":      map[string]any{"type": "string", "enum": []string{"relevance", "last_edited", "created"}},
 				"page_size": map[string]any{"type": "integer", "maximum": 50},
 				"filters": map[string]any{"type": "object", "properties": map[string]any{
 					"created_date_range":     map[string]any{"type": "object", "properties": map[string]any{"start_date": map[string]any{"type": "string"}, "end_date": map[string]any{"type": "string"}}},
@@ -232,13 +233,13 @@ func TestDiscoverCrawlsSeedsLinksAndRecentEdits(t *testing.T) {
 	fixture.mu.Lock()
 	searches := append([]map[string]any(nil), fixture.searches...)
 	fixture.mu.Unlock()
-	if len(searches) != 1 || searches[0]["query"] != "" || searches[0]["page_size"] != float64(50) {
+	if len(searches) != 1 || searches[0]["query"] != "" || searches[0]["page_size"] != float64(50) || searches[0]["sort"] != "last_edited" {
 		t.Fatalf("sweep search arguments: %#v", searches)
 	}
 	filters, _ := searches[0]["filters"].(map[string]any)
 	edited, _ := filters["last_edited_date_range"].(map[string]any)
 	start, _ := edited["start_date"].(string)
-	if _, err := time.Parse(time.RFC3339, start); err != nil {
+	if _, err := time.Parse(time.DateOnly, start); err != nil {
 		t.Fatalf("sweep filter start_date %q: %v", start, err)
 	}
 
@@ -291,6 +292,12 @@ func TestDiscoverStopsAtLimit(t *testing.T) {
 	if !strings.Contains(strings.Join(summary.Warnings, "\n"), "stopped at limit 2") {
 		t.Fatalf("missing limit warning: %#v", summary.Warnings)
 	}
+	fixture.mu.Lock()
+	sweepSize := fixture.searches[0]["page_size"]
+	fixture.mu.Unlock()
+	if sweepSize != float64(1) {
+		t.Fatalf("sweep page size under limit 2 = %v, want 1", sweepSize)
+	}
 	fixture.resetFetched()
 	resumed, err := client.Sync(ctx, st, SyncOptions{Discover: true, Limit: 0})
 	if err != nil {
@@ -336,7 +343,7 @@ func TestDiscoverWithoutDateFilterSkipsSweep(t *testing.T) {
 	if summary.Candidates != 7 || contains(fixture.fetchedIDs(), crawlPageF) {
 		t.Fatalf("sweep ran without a date filter: %+v %v", summary, fixture.fetchedIDs())
 	}
-	if !strings.Contains(strings.Join(summary.Warnings, "\n"), "no last-edited date filter") {
+	if !strings.Contains(strings.Join(summary.Warnings, "\n"), "neither a last-edited sort nor a last-edited date filter") {
 		t.Fatalf("missing schema warning: %#v", summary.Warnings)
 	}
 	fixture.mu.Lock()
@@ -344,6 +351,23 @@ func TestDiscoverWithoutDateFilterSkipsSweep(t *testing.T) {
 	fixture.mu.Unlock()
 	if searchCount != 0 {
 		t.Fatalf("search calls = %d, want 0", searchCount)
+	}
+}
+
+func TestResolveNotionToolsPrefersPlainSearchAndFetch(t *testing.T) {
+	meta := &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}
+	tools, err := resolveNotionTools([]toolDefinition{
+		{Name: "notion_notion-memory-search", Meta: meta},
+		{Name: "notion_search", Meta: meta, InputSchema: json.RawMessage(`{"properties":{"sort":{"enum":["last_edited"]}}}`)},
+		{Name: "notion_fetch", Meta: meta},
+		{Name: "notion_notion-search-emails", Meta: meta},
+		{Name: "notion_notion-get-file-download-urls-fetch", Meta: meta},
+	}, testConnectorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tools.Search != "notion_search" || tools.Fetch != "notion_fetch" || lastEditedSort(tools.SearchSchema) != "last_edited" {
+		t.Fatalf("resolved tools = %+v", tools)
 	}
 }
 
