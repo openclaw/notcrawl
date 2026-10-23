@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update CrawlKit to v0.17.2 and SQLite to v1.61.0 while retaining the Go 1.27.1 minimum and Go 1.27.3 build toolchain.
+
 ### Fixed
 
 - Preserve whitespace in API-synced code blocks and use safe Markdown fences for embedded backticks. Thanks @parth-garg01.
