@@ -40,7 +40,7 @@ To verify the current default branch through the shared release pipeline without
 creating a tag or publishing a release, dispatch a dry run with the current version:
 
 ```bash
-gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.7 -F dry_run=true
+gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.9 -F dry_run=true
 ```
 
 The dry run builds, signs, and verifies artifacts but skips publication.
@@ -51,7 +51,7 @@ Stamp the changelog section with the release date, merge it to protected
 `main`, then dispatch the unified workflow:
 
 ```bash
-gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.7
+gh workflow run release-unified.yml --repo openclaw/notcrawl -f version=0.6.9
 ```
 
 The workflow freezes the protected source revision, creates the immutable
@@ -95,10 +95,10 @@ verify the exact manifest, aggregate checksums, Linux package provenance, and
 macOS signatures from a Mac:
 
 ```bash
-make verify-release TAG=v0.6.7
+make verify-release TAG=v0.6.9
 ```
 
-`make verify-release-macos TAG=v0.6.7` verifies already-downloaded macOS
+`make verify-release-macos TAG=v0.6.9` verifies already-downloaded macOS
 archives in `dist/`. These targets are read-only diagnostics; they never upload
 or alter a release.
 
