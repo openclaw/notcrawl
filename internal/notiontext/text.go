@@ -156,6 +156,10 @@ func walk(v any, parts *[]string) {
 			*parts = append(*parts, x)
 		}
 	case []any:
+		if text, ok := richTextRun(x); ok {
+			*parts = append(*parts, text)
+			return
+		}
 		if text, ok := legacyRichTextPart(x); ok {
 			*parts = append(*parts, text)
 			return
@@ -182,6 +186,40 @@ func walk(v any, parts *[]string) {
 			}
 		}
 	}
+}
+
+// richTextRun concatenates an API rich_text array. Notion splits text into one
+// segment per formatting change, so segments must be joined without separators.
+func richTextRun(values []any) (string, bool) {
+	if len(values) == 0 {
+		return "", false
+	}
+	var b strings.Builder
+	for _, value := range values {
+		segment, ok := value.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		text, ok := segment["plain_text"].(string)
+		if !ok {
+			content, hasContent := richTextContentRaw(segment["text"])
+			if !hasContent {
+				return "", false
+			}
+			text = content
+		}
+		b.WriteString(text)
+	}
+	return b.String(), true
+}
+
+func richTextContentRaw(v any) (string, bool) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	s, ok := m["content"].(string)
+	return s, ok
 }
 
 func legacyRichTextPart(values []any) (string, bool) {

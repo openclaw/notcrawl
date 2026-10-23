@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Join Notion API rich-text segments without inserted spaces so formatted spans no longer produce text like `world !` or `foo ()`. Thanks @parth-garg01.
+
 ## 0.6.8 - 2026-10-20
 
 **Highlights:** Rebuild with Go 1.27.3 to fix the reachable crypto/x509 certificate-validation vulnerability.

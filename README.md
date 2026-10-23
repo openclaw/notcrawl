@@ -78,6 +78,8 @@ Markdown exports preserve archived HTTP(S) destinations for bookmarks, embeds, l
 
 API simple tables render as Markdown tables from their archived cell values. Tables without column headers receive an empty Markdown header; cell whitespace is normalized. Existing archives can export these tables without resyncing. Run `notcrawl maintain` to rebuild search entries for previously archived table cells.
 
+API text preserves word and punctuation boundaries across inline formatting changes. Run `notcrawl sync --source api` and then `notcrawl export-md` to repair text previously archived with extra spaces between formatted spans.
+
 Database rows can be exported separately from the Markdown archive:
 
 ```sh
