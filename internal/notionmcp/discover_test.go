@@ -354,20 +354,37 @@ func TestDiscoverWithoutDateFilterSkipsSweep(t *testing.T) {
 	}
 }
 
-func TestResolveNotionToolsPrefersPlainSearchAndFetch(t *testing.T) {
+func TestResolveNotionToolsPrefersExactSearchAndFetchInEitherOrder(t *testing.T) {
 	meta := &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}
-	tools, err := resolveNotionTools([]toolDefinition{
-		{Name: "notion_notion-memory-search", Meta: meta},
-		{Name: "notion_search", Meta: meta, InputSchema: json.RawMessage(`{"properties":{"sort":{"enum":["last_edited"]}}}`)},
-		{Name: "notion_fetch", Meta: meta},
+	schema := json.RawMessage(`{"properties":{"sort":{"enum":["last_edited"]}}}`)
+	variants := []toolDefinition{
 		{Name: "notion_notion-search-emails", Meta: meta},
-		{Name: "notion_notion-get-file-download-urls-fetch", Meta: meta},
-	}, testConnectorID)
-	if err != nil {
-		t.Fatal(err)
+		{Name: "notion_notion-memory-search", Meta: meta},
+		{Name: "notion_notion-search-agents", Meta: meta},
+		{Name: "notion_notion-get-file-download-urls", Title: "Fetch download URLs", Meta: meta},
 	}
-	if tools.Search != "notion_search" || tools.Fetch != "notion_fetch" || lastEditedSort(tools.SearchSchema) != "last_edited" {
-		t.Fatalf("resolved tools = %+v", tools)
+	exact := []toolDefinition{
+		{Name: "notion_notion-search", Meta: meta, InputSchema: schema},
+		{Name: "notion_notion-fetch", Meta: meta},
+	}
+	for name, order := range map[string][]toolDefinition{
+		"variants first": append(append([]toolDefinition{}, variants...), exact...),
+		"exact first":    append(append([]toolDefinition{}, exact...), variants...),
+	} {
+		tools, err := resolveNotionTools(order, testConnectorID)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if tools.Search != "notion_notion-search" || tools.Fetch != "notion_notion-fetch" || lastEditedSort(tools.SearchSchema) != "last_edited" {
+			t.Fatalf("%s: resolved tools = %+v", name, tools)
+		}
+	}
+	fallback, err := resolveNotionTools([]toolDefinition{
+		{Name: "notion_notion-search-emails", Meta: meta},
+		{Name: "notion_notion-get-file-download-urls", Title: "Fetch download URLs", Meta: meta},
+	}, testConnectorID)
+	if err != nil || fallback.Search != "notion_notion-search-emails" {
+		t.Fatalf("substring fallback without exact tools: %+v %v", fallback, err)
 	}
 }
 

@@ -339,8 +339,8 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 }
 
 func resolveNotionTools(tools []toolDefinition, connectorID string) (notionToolset, error) {
-	var fetch, search string
-	var searchSchema json.RawMessage
+	var fetch, search toolDefinition
+	fetchExact, searchExact := false, false
 	for _, tool := range tools {
 		if !matchesNotionConnector(tool, connectorID) {
 			continue
@@ -349,25 +349,29 @@ func resolveNotionTools(tools []toolDefinition, connectorID string) (notionTools
 		if strings.Contains(identity, "legacy") {
 			continue
 		}
+		name := strings.ToLower(tool.Name)
 		switch {
-		case strings.Contains(identity, "fetch"):
-			if fetch == "" || len(tool.Name) < len(fetch) {
-				fetch = tool.Name
+		case strings.HasSuffix(name, "fetch"):
+			if !fetchExact || len(tool.Name) < len(fetch.Name) {
+				fetch, fetchExact = tool, true
 			}
-		case strings.Contains(identity, "search"):
-			if search == "" || len(tool.Name) < len(search) {
-				search = tool.Name
-				searchSchema = tool.InputSchema
+		case strings.HasSuffix(name, "search"):
+			if !searchExact || len(tool.Name) < len(search.Name) {
+				search, searchExact = tool, true
 			}
+		case !fetchExact && fetch.Name == "" && strings.Contains(identity, "fetch"):
+			fetch = tool
+		case !searchExact && search.Name == "" && strings.Contains(identity, "search"):
+			search = tool
 		}
 	}
-	if fetch == "" {
+	if fetch.Name == "" {
 		return notionToolset{}, fmt.Errorf("could not resolve fetch tool for the configured Notion connector")
 	}
-	if search == "" {
+	if search.Name == "" {
 		return notionToolset{}, fmt.Errorf("could not resolve search tool for the configured Notion connector")
 	}
-	return notionToolset{Fetch: fetch, Search: search, SearchSchema: searchSchema}, nil
+	return notionToolset{Fetch: fetch.Name, Search: search.Name, SearchSchema: search.InputSchema}, nil
 }
 
 func matchesNotionConnector(tool toolDefinition, connectorID string) bool {
