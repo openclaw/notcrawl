@@ -21,9 +21,10 @@ type Client struct {
 }
 
 type SyncOptions struct {
-	PageIDs []string
-	Queries []string
-	Limit   int
+	PageIDs  []string
+	Queries  []string
+	Limit    int
+	Discover bool
 }
 
 type Summary struct {
@@ -39,6 +40,7 @@ type pageCandidate struct {
 	FetchRef string
 	Page     store.Page
 	Cursor   string
+	Refresh  bool
 }
 
 type searchResult struct {
@@ -68,6 +70,9 @@ func (c Client) Sync(ctx context.Context, st *store.Store, opts SyncOptions) (Su
 	if err != nil {
 		return Summary{}, err
 	}
+	if opts.Discover {
+		return c.discover(ctx, gateway, tools, st, existing, opts)
+	}
 	candidates, err := c.candidates(ctx, gateway, tools, st, existing, opts)
 	if err != nil {
 		return Summary{}, err
@@ -81,68 +86,82 @@ func (c Client) Sync(ctx context.Context, st *store.Store, opts SyncOptions) (Su
 			summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP fetch failed for %s: %v", candidate.ID, err))
 			continue
 		}
-		body := sanitizeSignedURLs(extractEnhancedMarkdown(result.Text))
-		if strings.TrimSpace(body) == "" {
-			summary.EmptyPages++
-			summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP returned no body for %s; existing archive content was left unchanged", candidate.ID))
-			continue
-		}
-		page := candidate.Page
-		if page.ID == "" {
-			page.ID = candidate.ID
-		}
-		if strings.TrimSpace(result.Title) != "" {
-			page.Title = result.Title
-		}
-		if strings.TrimSpace(result.URL) != "" {
-			page.URL = sanitizeSignedURLs(result.URL)
-		}
-		page.URL = sanitizeSignedURLs(page.URL)
-		page.Alive = true
-		page.Source = store.SourceNotionMCP
-		page.SyncedAt = now
-		metadata := fetchMetadataJSON(result)
-		page.RawJSON = metadata
-		if err := st.UpsertPage(ctx, page); err != nil {
+		if err := persistFetch(ctx, st, candidate, result, now, &summary); err != nil {
 			return summary, err
 		}
-		if err := st.UpsertBlock(ctx, store.Block{
-			ID:             markdownBlockID(page.ID),
-			PageID:         page.ID,
-			SpaceID:        page.SpaceID,
-			ParentID:       page.ID,
-			ParentTable:    "page",
-			Type:           store.BlockTypeNotionMCPMarkdown,
-			Text:           body,
-			DisplayOrder:   0,
-			LastEditedTime: page.LastEditedTime,
-			Alive:          true,
-			Source:         store.SourceNotionMCP,
-			RawJSON:        metadata,
-			SyncedAt:       now,
-		}); err != nil {
-			return summary, err
-		}
-		if err := st.UpsertRawRecord(ctx, store.RawRecord{
-			Source:      store.SourceNotionMCP,
-			RecordTable: "page_fetch",
-			RecordID:    page.ID,
-			ParentID:    page.ParentID,
-			SpaceID:     page.SpaceID,
-			RawJSON:     metadata,
-			SyncedAt:    now,
-		}); err != nil {
-			return summary, err
-		}
-		if err := st.SetSyncState(ctx, store.SourceNotionMCP, "page_content", page.ID, candidate.Cursor); err != nil {
-			return summary, err
-		}
-		summary.Pages++
 	}
+	return summary, finishSummary(summary)
+}
+
+func finishSummary(summary Summary) error {
 	if summary.Pages == 0 && summary.Failed > 0 {
-		return summary, fmt.Errorf("all %d Notion MCP fetches failed", summary.Failed)
+		return fmt.Errorf("all %d Notion MCP fetches failed", summary.Failed)
 	}
-	return summary, nil
+	return nil
+}
+
+func persistFetch(ctx context.Context, st *store.Store, candidate pageCandidate, result fetchResult, now int64, summary *Summary) error {
+	body := sanitizeSignedURLs(extractEnhancedMarkdown(result.Text))
+	if strings.TrimSpace(body) == "" {
+		summary.EmptyPages++
+		summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP returned no body for %s; existing archive content was left unchanged", candidate.ID))
+		return nil
+	}
+	page := candidate.Page
+	if page.ID == "" {
+		page.ID = candidate.ID
+	}
+	if strings.TrimSpace(result.Title) != "" {
+		page.Title = result.Title
+	}
+	if strings.TrimSpace(result.URL) != "" {
+		page.URL = sanitizeSignedURLs(result.URL)
+	}
+	page.URL = sanitizeSignedURLs(page.URL)
+	if edited := metadataLastEdited(result.Metadata); edited > page.LastEditedTime {
+		page.LastEditedTime = edited
+	}
+	page.Alive = true
+	page.Source = store.SourceNotionMCP
+	page.SyncedAt = now
+	metadata := fetchMetadataJSON(result)
+	page.RawJSON = metadata
+	if err := st.UpsertPage(ctx, page); err != nil {
+		return err
+	}
+	if err := st.UpsertBlock(ctx, store.Block{
+		ID:             markdownBlockID(page.ID),
+		PageID:         page.ID,
+		SpaceID:        page.SpaceID,
+		ParentID:       page.ID,
+		ParentTable:    "page",
+		Type:           store.BlockTypeNotionMCPMarkdown,
+		Text:           body,
+		DisplayOrder:   0,
+		LastEditedTime: page.LastEditedTime,
+		Alive:          true,
+		Source:         store.SourceNotionMCP,
+		RawJSON:        metadata,
+		SyncedAt:       now,
+	}); err != nil {
+		return err
+	}
+	if err := st.UpsertRawRecord(ctx, store.RawRecord{
+		Source:      store.SourceNotionMCP,
+		RecordTable: "page_fetch",
+		RecordID:    page.ID,
+		ParentID:    page.ParentID,
+		SpaceID:     page.SpaceID,
+		RawJSON:     metadata,
+		SyncedAt:    now,
+	}); err != nil {
+		return err
+	}
+	if err := st.SetSyncState(ctx, store.SourceNotionMCP, "page_content", page.ID, candidate.Cursor); err != nil {
+		return err
+	}
+	summary.Pages++
+	return nil
 }
 
 func (c Client) candidates(
@@ -190,7 +209,7 @@ func (c Client) candidates(
 				pageSize = remaining
 			}
 		}
-		results, err := gateway.searchPages(ctx, tools.Search, query, pageSize)
+		results, _, err := gateway.searchPages(ctx, tools.Search, query, pageSize, nil)
 		if err != nil {
 			return nil, err
 		}

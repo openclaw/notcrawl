@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/openclaw/notcrawl/internal/notiontext"
 )
@@ -273,6 +274,17 @@ func (s *Store) pageByID(ctx context.Context, id string) (Page, error) {
 		&x.PropertiesJSON, &x.CreatedTime, &x.LastEditedTime, &alive, &x.Source, &x.RawJSON, &x.SyncedAt)
 	x.Alive = IntBool(alive)
 	return x, err
+}
+
+func (s *Store) Block(ctx context.Context, id string) (Block, bool, error) {
+	block, err := s.blockByID(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Block{}, false, nil
+	}
+	if err != nil {
+		return Block{}, false, err
+	}
+	return block, true, nil
 }
 
 func (s *Store) blockByID(ctx context.Context, id string) (Block, error) {

@@ -54,6 +54,7 @@ type MCPConfig struct {
 	AuthPath    string `toml:"auth_path"`
 	ConnectorID string `toml:"connector_id"`
 	MaxPages    int    `toml:"max_pages"`
+	Discover    bool   `toml:"discover"`
 }
 
 type ShareConfig struct {

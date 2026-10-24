@@ -20,6 +20,8 @@ base_url = "https://chatgpt.com/backend-api/wham/apps"
 auth_path = "~/.codex/auth.json"
 connector_id = "asdk_app_69c18c28f1188191bf5b8445c4ab0a2e"
 max_pages = 100
+# Crawl the whole workspace through the connector (archived IDs, recent edits, linked pages).
+discover = false
 
 [share]
 remote = ""
