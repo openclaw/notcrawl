@@ -3,6 +3,7 @@ package notiondesktop
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,6 +107,19 @@ func TestIngestBlocksDerivesUntitledPageFromChildText(t *testing.T) {
 	}
 	if title != "Decision log" {
 		t.Fatalf("expected child text title, got %q", title)
+	}
+
+	var raw string
+	if err := st.DB().QueryRowContext(ctx, `select raw_json from blocks where id = 'child1'`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	// Desktop envelopes preserve TEXT JSON for the export decoder.
+	if envelope["properties"] != `{"title":[["Decision log"]]}` || envelope["content"] != "" {
+		t.Fatalf("desktop JSON envelope = %#v", envelope)
 	}
 }
 
