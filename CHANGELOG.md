@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Update CrawlKit to v0.17.3 so SQLite lock waits honor context deadlines, with SQLite 3.54.1.
+
 ## 0.6.9 - 2026-10-23
 
 **Highlights:** Preserve API-synced code blocks and rich-text spacing, and refresh CrawlKit and SQLite.
