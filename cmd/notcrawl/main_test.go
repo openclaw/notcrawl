@@ -622,7 +622,7 @@ max_pages = 10
 	if err != nil {
 		t.Fatalf("notion-mcp sync failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "notion-mcp: candidates=1 pages=1 empty=0 failed=0") {
+	if !strings.Contains(stdout.String(), "notion-mcp: candidates=1 pages=1 empty=0 failed=0 not_found=0") {
 		t.Fatalf("unexpected stdout:\n%s", stdout.String())
 	}
 	for _, want := range []string{`phase=notion-mcp`, `state=finished`, `percent=100.0`} {
@@ -738,7 +738,7 @@ max_pages = 10
 	if err != nil {
 		t.Fatalf("sync --source all failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
-	if strings.Contains(stdout.String(), "desktop:") || !strings.Contains(stdout.String(), "notion-mcp: candidates=2 pages=2 empty=0 failed=0") {
+	if strings.Contains(stdout.String(), "desktop:") || !strings.Contains(stdout.String(), "notion-mcp: candidates=2 pages=2 empty=0 failed=0 not_found=0") {
 		t.Fatalf("unexpected stdout:\n%s", stdout.String())
 	}
 	st, err = store.Open(dbPath)

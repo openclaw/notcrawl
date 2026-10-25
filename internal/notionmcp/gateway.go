@@ -3,6 +3,7 @@ package notionmcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,8 @@ const (
 	maxRateLimitRetries = 5
 	maxRetryDelay       = 60 * time.Second
 )
+
+var errNotFound = errors.New("Notion connector object not found")
 
 type authInfo struct {
 	AccessToken string
@@ -214,6 +217,11 @@ func (g *gatewayClient) callToolText(ctx context.Context, name string, arguments
 		return "", err
 	}
 	if result.IsError {
+		for _, item := range result.Content {
+			if strings.Contains(item.Text, "NOT_FOUND") || strings.Contains(item.Text, "object_not_found") {
+				return "", errNotFound
+			}
+		}
 		return "", fmt.Errorf("Notion connector tool %s reported an error", name)
 	}
 	var parts []string

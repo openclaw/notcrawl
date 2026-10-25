@@ -3,6 +3,7 @@ package notionmcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -68,6 +69,7 @@ func (c Client) discover(
 	startedAt := time.Now().UTC()
 	var summary Summary
 	queue := newCrawlQueue()
+	explicitRefresh := map[string]bool{}
 	since, err := discoverySince(ctx, st, startedAt)
 	if err != nil {
 		return summary, err
@@ -82,6 +84,7 @@ func (c Client) discover(
 		if id == "" {
 			return summary, fmt.Errorf("could not determine Notion page ID from %q", ref)
 		}
+		explicitRefresh[id] = true
 		queue.add(pageCandidate{ID: id, FetchRef: ref, Page: existing[id], Refresh: true})
 	}
 	for _, query := range opts.Queries {
@@ -97,6 +100,7 @@ func (c Client) discover(
 		for _, result := range results {
 			candidate := searchCandidate(result, existing)
 			candidate.Refresh = true
+			explicitRefresh[candidate.ID] = true
 			queue.add(candidate)
 		}
 	}
@@ -119,6 +123,15 @@ func (c Client) discover(
 			break
 		}
 		candidate := queue.pop()
+		if !explicitRefresh[candidate.ID] {
+			notFound, err := st.HasRecentSyncState(ctx, store.SourceNotionMCP, "page_not_found", candidate.ID, startedAt.Add(-7*24*time.Hour).UnixMilli())
+			if err != nil {
+				return summary, err
+			}
+			if notFound {
+				continue
+			}
+		}
 		if !candidate.Refresh {
 			synced, err := st.HasSyncState(ctx, store.SourceNotionMCP, "page_content", candidate.ID)
 			if err != nil {
@@ -138,6 +151,13 @@ func (c Client) discover(
 		summary.Candidates++
 		result, err := gateway.fetchPage(ctx, tools.Fetch, candidate.FetchRef)
 		if err != nil {
+			if errors.Is(err, errNotFound) {
+				if err := st.SetSyncState(ctx, store.SourceNotionMCP, "page_not_found", candidate.ID, ""); err != nil {
+					return summary, err
+				}
+				summary.NotFound++
+				continue
+			}
 			summary.Failed++
 			summary.Warnings = append(summary.Warnings, fmt.Sprintf("Notion MCP fetch failed for %s: %v", candidate.ID, err))
 			continue

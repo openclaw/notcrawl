@@ -2,7 +2,9 @@ package notionmcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -123,7 +125,7 @@ func (f *crawlFixture) serve(w http.ResponseWriter, r *http.Request) {
 			}
 			document, ok := f.documents[id]
 			if !ok {
-				writeRPCResult(w, request.ID, map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": "not found"}}})
+				writeRPCResult(w, request.ID, map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": "Error code: NOT_FOUND; Error: RuntimeException: object_not_found private details"}}})
 				return
 			}
 			payload, _ := json.Marshal(map[string]any{
@@ -409,5 +411,130 @@ collection://` + crawlDatabaseC + ` https://example.com/` + crawlPageE + ` https
 	got := linkedIDs(result, crawlPageA)
 	if strings.Join(got, ",") != crawlPageB+","+crawlDatabaseC {
 		t.Fatalf("linked IDs = %v", got)
+	}
+}
+
+func TestDiscoverNotFoundCooldown(t *testing.T) {
+	ctx := context.Background()
+	st := newCrawlStore(t)
+	fixture := newCrawlFixture()
+	delete(fixture.documents, crawlPageB)
+	client := newCrawlClient(t, fixture)
+	first, err := client.Sync(ctx, st, SyncOptions{Discover: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := st.HasSyncState(ctx, store.SourceNotionMCP, "page_not_found", crawlPageB)
+	if err != nil || !recorded || first.Failed != 1 || first.NotFound != 1 {
+		t.Fatalf("recorded=%v summary=%+v err=%v", recorded, first, err)
+	}
+	transientRecorded, err := st.HasSyncState(ctx, store.SourceNotionMCP, "page_not_found", crawlPageG)
+	if err != nil || transientRecorded {
+		t.Fatalf("transient failure cached: %v err=%v", transientRecorded, err)
+	}
+	for _, warning := range first.Warnings {
+		if strings.Contains(warning, crawlPageB) || strings.Contains(warning, "private details") {
+			t.Fatalf("not-found warning: %s", warning)
+		}
+	}
+	fixture.resetFetched()
+	second, err := client.Sync(ctx, st, SyncOptions{Discover: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Failed != 0 || second.NotFound != 0 || strings.Contains(strings.Join(fixture.fetchedIDs(), ","), crawlPageB) {
+		t.Fatalf("cooldown ignored: %+v fetched=%v", second, fixture.fetchedIDs())
+	}
+	if err := st.WithSQLTransaction(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "update sync_state set synced_at = ? where source = ? and entity_type = ? and entity_id = ?", time.Now().Add(-7*24*time.Hour-time.Second).UnixMilli(), store.SourceNotionMCP, "page_not_found", crawlPageB)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.resetFetched()
+	if _, err := client.Sync(ctx, st, SyncOptions{Discover: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(fixture.fetchedIDs(), ","), crawlPageB) {
+		t.Fatal("expired not-found page was not retried")
+	}
+	for _, opts := range []SyncOptions{
+		{Discover: true, PageIDs: []string{crawlPageB}},
+		{Discover: true, Queries: []string{"B"}},
+	} {
+		fixture.mu.Lock()
+		fixture.sweep = []searchResult{{ID: crawlPageB, Type: "page"}}
+		fixture.mu.Unlock()
+		fixture.resetFetched()
+		if _, err := client.Sync(ctx, st, opts); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.Join(fixture.fetchedIDs(), ","), crawlPageB) {
+			t.Fatalf("explicit refresh skipped: %+v", opts)
+		}
+	}
+	fixture.resetFetched()
+	if _, err := client.Sync(ctx, st, SyncOptions{Discover: true}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(fixture.fetchedIDs(), ","), crawlPageB) {
+		t.Fatal("recent-edit sweep bypassed cooldown")
+	}
+}
+
+func TestGatewayClassifiesNotFoundWithoutExposingText(t *testing.T) {
+	for _, tc := range []struct {
+		text     string
+		isError  bool
+		notFound bool
+	}{
+		{"Error code: NOT_FOUND; private details", true, true},
+		{"RuntimeException: object_not_found private details", true, true},
+		{"rate limited private details", true, false},
+		{"page body says NOT_FOUND", false, false},
+	} {
+		t.Run(tc.text, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				writeRPCResult(w, 1, map[string]any{"isError": tc.isError, "content": []map[string]any{{"type": "text", "text": tc.text}}})
+			}))
+			defer server.Close()
+			gateway := gatewayClient{http: server.Client(), baseURL: server.URL}
+			text, err := gateway.callToolText(context.Background(), "notion_fetch", map[string]any{"id": crawlPageB})
+			if errors.Is(err, errNotFound) != tc.notFound {
+				t.Fatalf("classification: %v", err)
+			}
+			if tc.isError && (err == nil || strings.Contains(err.Error(), "private details")) {
+				t.Fatalf("unsafe error: %v", err)
+			}
+			if !tc.isError && (err != nil || text != tc.text) {
+				t.Fatalf("success text=%q err=%v", text, err)
+			}
+		})
+	}
+}
+
+func TestDiscoverNotFoundPreservesArchive(t *testing.T) {
+	ctx := context.Background()
+	st := newCrawlStore(t)
+	fixture := newCrawlFixture()
+	fixture.documents = nil
+	fixture.failOnce = nil
+	fixture.sweep = nil
+	summary, err := newCrawlClient(t, fixture).Sync(ctx, st, SyncOptions{Discover: true})
+	if err != nil || summary.NotFound != 3 || summary.Failed != 0 || len(summary.Warnings) != 0 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+	pages, err := st.Pages(ctx)
+	if err != nil || len(pages) != 2 {
+		t.Fatalf("pages=%v err=%v", pages, err)
+	}
+	for _, page := range pages {
+		if !page.Alive || page.Source != store.SourceDesktop {
+			t.Fatalf("archive changed: %+v", page)
+		}
+	}
+	collections, err := st.Collections(ctx)
+	if err != nil || len(collections) != 1 || collections[0].ID != crawlCollectionH {
+		t.Fatalf("collections=%v err=%v", collections, err)
 	}
 }

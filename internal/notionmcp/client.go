@@ -32,6 +32,7 @@ type Summary struct {
 	Pages      int
 	EmptyPages int
 	Failed     int
+	NotFound   int
 	Warnings   []string
 }
 

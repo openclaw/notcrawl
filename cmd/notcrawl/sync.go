@@ -115,7 +115,7 @@ func runSync(ctx context.Context, stdout, stderr io.Writer, cfg config.Config, a
 			if !*verbose {
 				writeSyncWarnings(stderr, s.Warnings)
 			}
-			fmt.Fprintf(stdout, "notion-mcp: candidates=%d pages=%d empty=%d failed=%d\n", s.Candidates, s.Pages, s.EmptyPages, s.Failed)
+			fmt.Fprintf(stdout, "notion-mcp: candidates=%d pages=%d empty=%d failed=%d not_found=%d\n", s.Candidates, s.Pages, s.EmptyPages, s.Failed, s.NotFound)
 		default:
 			return fmt.Errorf("unknown source %q", *source)
 		}
