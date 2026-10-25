@@ -42,7 +42,7 @@ Run `notcrawl doctor` if the desktop cache is not found.
 |---|---|---|
 | `desktop` | Fast, local ingestion of pages Notion Desktop has cached | None beyond Notion Desktop |
 | `api` | Pages, blocks, users, comments, databases, and rows shared with an integration | Set `NOTION_TOKEN` |
-| `notion-mcp` | Targeted repair of incomplete pages through the Notion app connected in Codex | Configure the experimental connector in `config.toml` |
+| `notion-mcp` | Targeted repair of incomplete pages, or a full workspace crawl, through the Notion app connected in Codex | Configure the experimental connector in `config.toml` |
 
 The official API is the stable remote integration:
 
@@ -69,6 +69,14 @@ notcrawl sync --source notion-mcp --query "launch plan" --limit 25
 ```
 
 Without `--page` or `--query`, the MCP source retries known Desktop pages with missing cached content and API pages with incomplete block sync. It does not enumerate the entire workspace. Empty connector responses leave archived content unchanged and remain eligible for retry. The transport uses Codex authentication through the experimental ChatGPT apps gateway.
+
+Discovery mode crawls the workspace through the connector, so the archive stays fresh without Notion Desktop or an API token. Enable it with `--discover` or `discover = true` under `[notion.mcp]`:
+
+```sh
+notcrawl sync --source notion-mcp --discover --limit 0
+```
+
+Each run seeds from every page and collection already in the archive plus a connector search for pages edited since the previous run, then follows child pages, linked pages, databases, and `collection://` data sources breadth-first. Records already fetched are skipped but their stored links are still followed, so a crawl cut short by `--limit` resumes on the next run; `--limit 0` is unlimited. The recent-edit search uses the connector's `last_edited` sort and last-edited date filter when `tools/list` advertises them, and takes at most half of `--limit`; without either, discovery relies on links and `--query`. Rate-limited gateway responses (HTTP 429/503) back off using `Retry-After` and retry up to five times; a failed page is skipped and retried on the next run. With `discover = true`, `sync --source all` runs the crawl on a machine without the Notion app once `[notion.desktop] enabled = false`.
 
 ## Work with the archive
 
@@ -204,7 +212,7 @@ policy: Notion search can temporarily omit accessible pages, so retirement
 does not prove permanent deletion. Tombstones and local recovery rows remain
 in SQLite. Database containers themselves are not retired by omission.
 
-Notion MCP mode is read-only and targeted. It reads the Codex bearer credential at request time, never stores it, resolves only the connected Notion search and fetch tools, and strips signed URL credentials before persisting connector Markdown. Credentials are sent only to the configured HTTPS ChatGPT apps gateway. The gateway and Codex auth-file format are experimental contracts.
+Notion MCP mode is read-only, targeted by default and a bounded crawl with `--discover`. It reads the Codex bearer credential at request time, never stores it, resolves only the connected Notion search and fetch tools, and strips signed URL credentials before persisting connector Markdown. Credentials are sent only to the configured HTTPS ChatGPT apps gateway. The gateway and Codex auth-file format are experimental contracts.
 
 ## Architecture
 

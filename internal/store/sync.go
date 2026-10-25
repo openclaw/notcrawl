@@ -52,3 +52,12 @@ func (s *Store) SyncStateCursor(ctx context.Context, source, entityType, entityI
 	}
 	return cursor.String, true, nil
 }
+
+func (s *Store) HasRecentSyncState(ctx context.Context, source, entityType, entityID string, since int64) (bool, error) {
+	var exists int
+	err := s.queryRowContext(ctx, `select exists(
+		select 1 from sync_state
+		where source = ? and entity_type = ? and entity_id = ? and synced_at > ?
+	)`, source, entityType, entityID, since).Scan(&exists)
+	return exists != 0, err
+}
