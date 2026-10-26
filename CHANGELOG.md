@@ -4,6 +4,7 @@
 
 - Select Notion MCP page search and fetch actions reliably when the connector also advertises auxiliary tools. Thanks @yashiels.
 - Update SQLite's libc dependency to v1.79.1 while retaining the Go 1.27.1 minimum and Go 1.27.3 build toolchain.
+- Refresh CodeQL to v4.39.1, the TruffleHog action and scanner to v3.99.7, and GoReleaser to v2.19.0.
 - Update CrawlKit to v0.17.3 so SQLite lock waits honor context deadlines, with SQLite 3.54.1.
 
 ## 0.6.9 - 2026-10-23
