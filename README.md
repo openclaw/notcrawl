@@ -70,6 +70,8 @@ notcrawl sync --source notion-mcp --query "launch plan" --limit 25
 
 Without `--page` or `--query`, the MCP source retries known Desktop pages with missing cached content and API pages with incomplete block sync. It does not enumerate the entire workspace. Empty connector responses leave archived content unchanged and remain eligible for retry. The transport uses Codex authentication through the experimental ChatGPT apps gateway.
 
+MCP sync selects the connector's named `search` and `fetch` actions, preferring the shortest qualified name when auxiliary variants are also advertised. Descriptions mentioning search or fetch do not make a tool a page action.
+
 ## Work with the archive
 
 `notcrawl tui` opens a three-pane terminal browser for workspaces, teamspaces, pages, and databases. It supports keyboard and mouse navigation, filtering, sorting, local refresh, opening or copying the selected Notion URL, and local/remote state in the footer.

@@ -303,11 +303,20 @@ func resolveNotionTools(tools []toolDefinition, connectorID string) (notionTools
 		if strings.Contains(identity, "legacy") {
 			continue
 		}
-		switch {
-		case strings.Contains(identity, "fetch"):
-			fetch = tool.Name
-		case strings.Contains(identity, "search"):
-			search = tool.Name
+		name := strings.ToLower(tool.Name)
+		action := name[strings.LastIndexAny(name, "_-/:")+1:]
+		var selected *string
+		switch action {
+		case "fetch":
+			selected = &fetch
+		case "search":
+			selected = &search
+		default:
+			continue
+		}
+		// Prefer the page action over longer variants such as memory-search.
+		if *selected == "" || len(tool.Name) < len(*selected) || (len(tool.Name) == len(*selected) && tool.Name < *selected) {
+			*selected = tool.Name
 		}
 	}
 	if fetch == "" {
