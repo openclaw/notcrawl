@@ -22,6 +22,49 @@ type gatewayFixture struct {
 	fetched     []string
 	searchQuery string
 	initialized bool
+	tools       []toolDefinition
+}
+
+func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
+	meta := &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}
+	variants := []toolDefinition{
+		{Name: "notion_notion-search-emails", Meta: meta},
+		{Name: "notion_notion-memory-search", Meta: meta},
+		{Name: "notion_notion-search-agents", Meta: meta},
+		{Name: "notion_notion-get-file-download-urls", Title: "Fetch download URLs", Meta: meta},
+	}
+	for _, names := range [][2]string{{"fetch", "search"}, {"notion_fetch", "notion_search"}, {"notion_notion-fetch", "notion_notion-search"}} {
+		for _, exactFirst := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/exact-first=%t", names[0], exactFirst), func(t *testing.T) {
+				pageTools := []toolDefinition{{Name: names[0], Meta: meta}, {Name: names[1], Meta: meta}}
+				tools := append(append([]toolDefinition{}, variants...), pageTools...)
+				if exactFirst {
+					tools = append(append([]toolDefinition{}, pageTools...), variants...)
+				}
+				fixture := &gatewayFixture{tools: tools}
+				server := httptest.NewServer(http.HandlerFunc(fixture.serve))
+				defer server.Close()
+				st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer st.Close()
+				summary, err := (Client{
+					BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
+				}).Sync(context.Background(), st, SyncOptions{Queries: []string{"launch plan"}, Limit: 1})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if summary.Pages != 1 || fixture.searchQuery != "launch plan" {
+					t.Fatalf("sync summary=%+v query=%q", summary, fixture.searchQuery)
+				}
+				blocks, err := st.PageBlocks(context.Background(), "55555555-5555-5555-5555-555555555555")
+				if err != nil || len(blocks) != 1 || !strings.Contains(blocks[0].Text, "Connector body") {
+					t.Fatalf("page content=%+v error=%v", blocks, err)
+				}
+			})
+		}
+	}
 }
 
 func TestSyncRepairsIncompleteDesktopPages(t *testing.T) {
@@ -648,21 +691,25 @@ func (f *gatewayFixture) serve(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "client did not complete initialization", http.StatusConflict)
 			return
 		}
-		writeRPCResult(w, request.ID, map[string]any{"tools": []map[string]any{
-			{"name": "notion_fetch", "title": "Notion_fetch", "_meta": map[string]any{"connector_id": testConnectorID, "connector_name": "Notion"}},
-			{"name": "notion_search", "title": "Notion_search", "_meta": map[string]any{"connector_id": testConnectorID, "connector_name": "Notion"}},
-			{"name": "legacy_fetch", "title": "Legacy fetch", "_meta": map[string]any{"connector_id": "legacy", "connector_name": "Notion (Legacy)"}},
-		}})
+		tools := f.tools
+		if tools == nil {
+			tools = []toolDefinition{
+				{Name: "notion_fetch", Title: "Notion_fetch", Meta: &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}},
+				{Name: "notion_search", Title: "Notion_search", Meta: &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}},
+				{Name: "legacy_fetch", Title: "Legacy fetch", Meta: &toolMeta{ConnectorID: "legacy", ConnectorName: "Notion (Legacy)"}},
+			}
+		}
+		writeRPCResult(w, request.ID, map[string]any{"tools": tools})
 	case "tools/call":
 		name, _ := request.Params["name"].(string)
 		arguments, _ := request.Params["arguments"].(map[string]any)
 		switch name {
-		case "notion_search":
+		case "search", "notion_search", "notion_notion-search":
 			f.mu.Lock()
 			f.searchQuery, _ = arguments["query"].(string)
 			f.mu.Unlock()
 			writeToolText(w, request.ID, `{"results":[{"id":"55555555-5555-5555-5555-555555555555","title":"Discovered","url":"https://notion.so/55555555555555555555555555555555","type":"page","timestamp":"2026-06-01T12:00:00Z"}],"type":"workspace_search"}`)
-		case "notion_fetch":
+		case "fetch", "notion_fetch", "notion_notion-fetch":
 			id, _ := arguments["id"].(string)
 			f.mu.Lock()
 			f.fetched = append(f.fetched, id)
