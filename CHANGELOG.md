@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.6.10 - 2026-10-26
+
+**Highlights:** Make Notion MCP page search and fetch reliable when auxiliary tools are advertised, and refresh SQLite and CrawlKit.
+
 - Select Notion MCP page search and fetch actions reliably when the connector also advertises auxiliary tools. Thanks @yashiels.
 - Update SQLite's libc dependency to v1.79.1 while retaining the Go 1.27.1 minimum and Go 1.27.3 build toolchain.
 - Refresh CodeQL to v4.39.1, the TruffleHog action and scanner to v3.99.7, and GoReleaser to v2.19.0.
