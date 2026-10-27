@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Verify RPM release packages with normalized binary member paths.
+
 ## 0.6.10 - 2026-10-26
 
 **Highlights:** Make Notion MCP page search and fetch reliable when auxiliary tools are advertised, and refresh SQLite and CrawlKit.

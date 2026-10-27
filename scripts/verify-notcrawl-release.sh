@@ -127,6 +127,14 @@ while IFS= read -r package; do
       echo "unexpected RPM package name: $name" >&2
       exit 1
     }
+    rpm_member=$(bsdtar -tf "$package" | awk '$0 == "/usr/bin/notcrawl" || $0 == "./usr/bin/notcrawl" || $0 == "usr/bin/notcrawl" { print }')
+    case "$rpm_member" in
+      /usr/bin/notcrawl|./usr/bin/notcrawl|usr/bin/notcrawl) ;;
+      *)
+        echo "RPM must contain exactly one /usr/bin/notcrawl binary: $name" >&2
+        exit 1
+        ;;
+    esac
   fi
   case "$name" in
     *_amd64.deb)
@@ -142,12 +150,12 @@ while IFS= read -r package; do
     *.x86_64.rpm)
       arch=amd64
       binary="$stage/notcrawl"
-      bsdtar -xOf "$package" /usr/bin/notcrawl >"$binary"
+      bsdtar -xOf "$package" "$rpm_member" >"$binary"
       ;;
     *.aarch64.rpm)
       arch=arm64
       binary="$stage/notcrawl"
-      bsdtar -xOf "$package" /usr/bin/notcrawl >"$binary"
+      bsdtar -xOf "$package" "$rpm_member" >"$binary"
       ;;
     *)
       echo "unexpected package architecture: $name" >&2
