@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep weekly main CodeQL scans instead of repeating analysis on every main push, preserving pull-request and manual scans with independent scheduling.
+
 - Verify RPM release packages with normalized binary member paths.
 
 ## 0.6.10 - 2026-10-26
