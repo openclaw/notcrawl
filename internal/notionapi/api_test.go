@@ -74,10 +74,7 @@ func TestSyncIngestsDatabasesAndRows(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	summary, err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret"}).Sync(context.Background(), st)
@@ -164,10 +161,7 @@ func TestSyncIngestsCurrentDataSourcesAndRows(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	summary, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret"}).Sync(context.Background(), st)
@@ -204,10 +198,7 @@ func TestIngestCommentsSkipsRestrictedResource(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	count, err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret", HTTP: http.DefaultClient}).ingestComments(context.Background(), st, "page1", "")
@@ -264,10 +255,7 @@ func TestSyncSkipsRestrictedResourceUsersAndContinuesDiscovery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	summary, err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret"}).Sync(context.Background(), st)
@@ -294,10 +282,7 @@ func TestSyncWarnsWhenAPIDiscoveryReturnsNothing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	if err := st.UpsertPage(context.Background(), store.Page{ID: "local-page", Title: "Existing", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
 		t.Fatal(err)
@@ -332,10 +317,7 @@ func TestIngestPageMarksBlockSyncOnlyAfterSuccessfulWalk(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	page := obj{
 		"id":       "page1",
@@ -383,10 +365,7 @@ func TestIngestArchivedPageRestoresDesktopBlocksWithoutRefetching(t *testing.T) 
 	defer server.Close()
 
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Desktop page", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
@@ -480,10 +459,7 @@ func TestWalkBlocksDoesNotRetirePreviousBlocksOnPartialWalk(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
 	ctx := context.Background()
@@ -548,10 +524,7 @@ func TestWalkBlocksSkipsSyncedBlockCopyChildren(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	count, _, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
@@ -589,10 +562,7 @@ func TestWalkBlocksSkipsUnsupportedBlockChildren(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	count, warnings, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
@@ -623,10 +593,7 @@ func TestIngestPageLeavesIncompleteWhenBlockChildrenUnsupported(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	ctx := context.Background()
 	page := obj{
@@ -686,10 +653,7 @@ func TestWalkBlocksRetiresMissingAPIBlocksAfterSuccessfulWalk(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
 	if _, _, err := client.walkBlocks(ctx, st, "page1", "page1", "space1"); err != nil {
@@ -756,10 +720,7 @@ func TestWalkBlocksFetchesOriginalSyncedBlockChildren(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	count, _, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).walkBlocks(context.Background(), st, "page1", "page1", "space1")
@@ -1004,10 +965,7 @@ func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).ingestComments(context.Background(), st, "page1", "space1")
@@ -1048,10 +1006,7 @@ func TestIngestCommentsRetriesCloudflareTimeout(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).ingestComments(context.Background(), st, "page1", "space1")
@@ -1084,10 +1039,7 @@ func TestSyncUsesDefaultHTTPClientWhenHTTPNil(t *testing.T) {
 	}))
 	defer server.Close()
 
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 
 	client := Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret"}
@@ -1163,10 +1115,7 @@ func TestWalkBlocksPreservesCodeBlockWhitespace(t *testing.T) {
 		]}`))
 	}))
 	defer server.Close()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	client := Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}
 	ctx := context.Background()
@@ -1180,4 +1129,13 @@ func TestWalkBlocksPreservesCodeBlockWhitespace(t *testing.T) {
 	if len(blocks) != 1 || blocks[0].Text != "def f():\n    return 1\n" {
 		t.Fatalf("code block text = %#v", blocks)
 	}
+}
+
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
