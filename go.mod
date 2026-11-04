@@ -5,7 +5,7 @@ go 1.27.1
 toolchain go1.27.3
 
 require (
-	github.com/alecthomas/kong v1.16.1
+	github.com/alecthomas/kong v1.17.0
 	github.com/openclaw/crawlkit v0.17.3
 	modernc.org/sqlite v1.61.0
 )
