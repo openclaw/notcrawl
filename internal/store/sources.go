@@ -52,58 +52,27 @@ func (s *Store) RetireSourcePagesNotSeen(ctx context.Context, source string, see
 }
 
 func (s *Store) RetireSourcePageBlocks(ctx context.Context, source, pageID string) (int, error) {
-	rows, err := s.queryContext(ctx, `select record_sources.record_id
-		from record_sources
-		join blocks on blocks.id = record_sources.record_id
-		where record_sources.record_table = 'block'
-			and record_sources.source = ?
-			and record_sources.alive = 1
-			and (
-				(coalesce(record_sources.payload_json, '') <> ''
-					and json_valid(record_sources.payload_json)
-					and json_extract(record_sources.payload_json, '$.PageID') = ?)
-				or
-				(coalesce(record_sources.payload_json, '') = ''
-					and blocks.source = record_sources.source
-					and blocks.page_id = ?)
-			)`, source, pageID, pageID)
-	if err != nil {
-		return 0, err
-	}
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Close(); err != nil {
-		return 0, err
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-	for _, id := range ids {
-		if err := s.retireRecordSource(ctx, "block", id, source, "parent-delete-event"); err != nil {
-			return 0, err
-		}
-	}
-	if err := s.markPageFTS(ctx, pageID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
+	return s.retireSourcePageBlocks(ctx, source, pageID, nil, "parent-delete-event")
 }
 
 func (s *Store) RetireSourcePageBlocksNotSyncedAt(ctx context.Context, source, pageID string, syncedAt int64) (int, error) {
-	rows, err := s.queryContext(ctx, `select record_sources.record_id
+	return s.retireSourcePageBlocks(ctx, source, pageID, &syncedAt, "complete-authoritative-enumeration")
+}
+
+func (s *Store) retireSourcePageBlocks(ctx context.Context, source, pageID string, notSyncedAt *int64, reason string) (int, error) {
+	syncFilter := ""
+	args := []any{source}
+	if notSyncedAt != nil {
+		syncFilter = "and record_sources.synced_at <> ?"
+		args = append(args, *notSyncedAt)
+	}
+	query := `select record_sources.record_id
 		from record_sources
 		join blocks on blocks.id = record_sources.record_id
 		where record_sources.record_table = 'block'
 			and record_sources.source = ?
 			and record_sources.alive = 1
-			and record_sources.synced_at <> ?
+			` + syncFilter + `
 			and (
 				(coalesce(record_sources.payload_json, '') <> ''
 					and json_valid(record_sources.payload_json)
@@ -112,7 +81,8 @@ func (s *Store) RetireSourcePageBlocksNotSyncedAt(ctx context.Context, source, p
 				(coalesce(record_sources.payload_json, '') = ''
 					and blocks.source = record_sources.source
 					and blocks.page_id = ?)
-			)`, source, syncedAt, pageID, pageID)
+			)`
+	rows, err := s.queryContext(ctx, query, append(args, pageID, pageID)...)
 	if err != nil {
 		return 0, err
 	}
@@ -132,7 +102,7 @@ func (s *Store) RetireSourcePageBlocksNotSyncedAt(ctx context.Context, source, p
 		return 0, err
 	}
 	for _, id := range ids {
-		if err := s.retireRecordSource(ctx, "block", id, source, "complete-authoritative-enumeration"); err != nil {
+		if err := s.retireRecordSource(ctx, "block", id, source, reason); err != nil {
 			return 0, err
 		}
 	}
