@@ -15,6 +15,10 @@ func (s *Store) Pages(ctx context.Context) ([]Page, error) {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanPages(rows)
+}
+
+func scanPages(rows *sql.Rows) ([]Page, error) {
 	var pages []Page
 	for rows.Next() {
 		var p Page
@@ -65,18 +69,7 @@ func (s *Store) CollectionPages(ctx context.Context, collectionID string) ([]Pag
 		return nil, err
 	}
 	defer rows.Close()
-	var pages []Page
-	for rows.Next() {
-		var p Page
-		var alive int
-		if err := rows.Scan(&p.ID, &p.SpaceID, &p.ParentID, &p.ParentTable, &p.CollectionID, &p.Title, &p.URL, &p.Icon, &p.Cover,
-			&p.PropertiesJSON, &p.CreatedTime, &p.LastEditedTime, &alive, &p.Source, &p.RawJSON, &p.SyncedAt); err != nil {
-			return nil, err
-		}
-		p.Alive = IntBool(alive)
-		pages = append(pages, p)
-	}
-	return pages, rows.Err()
+	return scanPages(rows)
 }
 
 func (s *Store) PageBlocks(ctx context.Context, pageID string) ([]Block, error) {
