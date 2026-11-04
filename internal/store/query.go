@@ -224,25 +224,15 @@ func (s *Store) stringMap(ctx context.Context, query string) (map[string]string,
 }
 
 func (s *Store) BlockParents(ctx context.Context) (map[string]ParentRef, error) {
-	rows, err := s.queryContext(ctx, `select id, parent_id, parent_table from blocks`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]ParentRef{}
-	for rows.Next() {
-		var id string
-		var parentID, parentTable sql.NullString
-		if err := rows.Scan(&id, &parentID, &parentTable); err != nil {
-			return nil, err
-		}
-		out[id] = ParentRef{ID: parentID.String, Table: parentTable.String}
-	}
-	return out, rows.Err()
+	return s.parentMap(ctx, `select id, parent_id, parent_table from blocks`)
 }
 
 func (s *Store) CollectionParents(ctx context.Context) (map[string]ParentRef, error) {
-	rows, err := s.queryContext(ctx, `select id, parent_id, parent_table from collections`)
+	return s.parentMap(ctx, `select id, parent_id, parent_table from collections`)
+}
+
+func (s *Store) parentMap(ctx context.Context, query string) (map[string]ParentRef, error) {
+	rows, err := s.queryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
