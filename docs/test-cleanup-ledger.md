@@ -31,3 +31,18 @@ redirect matching lines to `/dev/null` so output remains quiet.
 Validation runs the actual `make smoke` target and requires success without
 broken-pipe diagnostics. The temporary config and SQLite archive remain isolated;
 no product commands, assertions, release behavior, or live Notion data changed.
+
+## Official API response size
+
+Removed `TestDoRejectsOversizedSuccessBody`: it sent the same oversized JSON
+fixture over loopback HTTP as `TestDoDoesNotRetryOversizedSuccessBody` and
+asserted the same rejection. The retained case also checks that the client
+issues exactly one request. Moved the fixture-size guard into it and made it
+exact: one byte above the limit.
+
+Kept the exact-limit acceptance test and added its exact fixture-size guard,
+so the two tests cover opposite sides of the size boundary. Kept the small
+JSON decoding and transport-error retry cases; they cover different behavior.
+
+Validation: focused API race tests, full Go suite, static checks, isolated
+CLI smoke, independent review, and PR CI. No production or live Notion changes.
