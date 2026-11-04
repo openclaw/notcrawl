@@ -50,17 +50,17 @@ smoke: ## Build and smoke-test the CLI control surface.
 	@set -eu; tmp_dir="$$(mktemp -d)"; trap 'rm -rf "$$tmp_dir"' EXIT; \
 	output="$$($(CLI) --help 2>&1)"; \
 	printf '%s\n' "$$output"; \
-	printf '%s' "$$output" | grep -q "Usage of notcrawl:"; \
-	printf '%s' "$$output" | grep -q "metadata"; \
-	printf '%s' "$$output" | grep -q "tui"; \
+	printf '%s' "$$output" | grep "Usage of notcrawl:" >/dev/null; \
+	printf '%s' "$$output" | grep "metadata" >/dev/null; \
+	printf '%s' "$$output" | grep "tui" >/dev/null; \
 	test "$$($(CLI) --version)" = "ci"; \
 	output="$$($(CLI) metadata --json)"; \
-	printf '%s' "$$output" | grep -q '"schema_version"'; \
+	printf '%s' "$$output" | grep '"schema_version"' >/dev/null; \
 	$(CLI) --config "$$tmp_dir/notcrawl.toml" init; \
 	output="$$($(CLI) --config "$$tmp_dir/notcrawl.toml" --db "$$tmp_dir/notcrawl.db" status --json)"; \
-	printf '%s' "$$output" | grep -q '"databases"'; \
+	printf '%s' "$$output" | grep '"databases"' >/dev/null; \
 	output="$$($(CLI) --config "$$tmp_dir/notcrawl.toml" --db "$$tmp_dir/notcrawl.db" tui --json --limit 1)"; \
-	printf '%s' "$$output" | grep -q '^\['
+	printf '%s' "$$output" | grep '^\[' >/dev/null
 
 check: ## Run every local gate enforced by CI.
 	$(MAKE) deps

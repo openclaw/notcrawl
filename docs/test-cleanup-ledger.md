@@ -20,3 +20,14 @@ credential-free packaging. No live Notion data, credentials, or releases.
 Remaining: finish the semantic test/fixture audit across other packages and
 crawl apps; distinct parsing, ingestion, and export layers are not duplicates
 merely because they share sample inputs.
+
+## Smoke output checks
+
+The smoke recipe returned success while printing four `Broken pipe` errors on
+macOS: `grep -q` closed its input while the shell was still printing the captured
+help and JSON. Keep the same six patterns, consume their complete streams, and
+redirect matching lines to `/dev/null` so output remains quiet.
+
+Validation runs the actual `make smoke` target and requires success without
+broken-pipe diagnostics. The temporary config and SQLite archive remain isolated;
+no product commands, assertions, release behavior, or live Notion data changed.
