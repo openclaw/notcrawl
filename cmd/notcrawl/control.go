@@ -47,18 +47,9 @@ func runDoctor(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 		"mcp_auth_present":  fileExists(cfg.Notion.MCP.AuthPath),
 		"mcp_connector_id":  cfg.Notion.MCP.ConnectorID,
 	}
-	status := store.Status{DBPath: cfg.DBPath}
-	st, err := store.OpenReadOnly(cfg.DBPath)
+	status, err := readArchiveStatus(ctx, cfg.DBPath)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	} else {
-		defer st.Close()
-		status, err = st.Status(ctx)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	report["status"] = status
 	report["api_version"] = cfg.Notion.API.Version
@@ -79,18 +70,9 @@ func runStatus(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 	if fs.NArg() != 0 {
 		return fmt.Errorf("status takes flags only")
 	}
-	status := store.Status{DBPath: cfg.DBPath}
-	st, err := store.OpenReadOnly(cfg.DBPath)
+	status, err := readArchiveStatus(ctx, cfg.DBPath)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	} else {
-		defer st.Close()
-		status, err = st.Status(ctx)
-		if err != nil {
-			return err
-		}
+		return err
 	}
 	if *jsonOut {
 		return writeJSON(stdout, controlStatus(cfg, status))
@@ -101,6 +83,18 @@ func runStatus(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 	}
 	fmt.Fprintln(stdout, string(b))
 	return nil
+}
+
+func readArchiveStatus(ctx context.Context, path string) (store.Status, error) {
+	st, err := store.OpenReadOnly(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return store.Status{DBPath: path}, nil
+	}
+	if err != nil {
+		return store.Status{}, err
+	}
+	defer st.Close()
+	return st.Status(ctx)
 }
 
 func runMetadata(stdout io.Writer) error {
