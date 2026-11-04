@@ -916,28 +916,12 @@ func oversizedJSONBody() string {
 	return prefix + strings.Repeat("x", n) + suffix
 }
 
-func TestDoRejectsOversizedSuccessBody(t *testing.T) {
-	body := oversizedJSONBody()
-	if len(body) <= maxSuccessBodyBytes {
-		t.Fatalf("fixture length %d, want > %d", len(body), maxSuccessBodyBytes)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, body)
-	}))
-	defer server.Close()
-
-	var out map[string]any
-	err := (Client{BaseURL: server.URL, Version: "2022-06-28", Token: "secret", HTTP: server.Client()}).do(context.Background(), http.MethodGet, "/users", nil, &out)
-	if err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("expected too large error, got %v", err)
-	}
-}
-
 func TestDoDoesNotRetryOversizedSuccessBody(t *testing.T) {
 	attempts := 0
 	body := oversizedJSONBody()
+	if len(body) != maxSuccessBodyBytes+1 {
+		t.Fatalf("fixture length %d, want %d", len(body), maxSuccessBodyBytes+1)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
 		w.Header().Set("Content-Type", "application/json")
@@ -976,6 +960,9 @@ func TestDoUnmarshalsSmallSuccessBody(t *testing.T) {
 
 func TestDoAcceptsSuccessBodyAtLimit(t *testing.T) {
 	body := strings.Replace(oversizedJSONBody(), "x", "", 1)
+	if len(body) != maxSuccessBodyBytes {
+		t.Fatalf("fixture length %d, want %d", len(body), maxSuccessBodyBytes)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, body)
