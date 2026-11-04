@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Share one Linux CI worker and Go build cache across dependency, lint, and test gates to avoid repeated setup and compilation.
+
 - Keep weekly main CodeQL scans instead of repeating analysis on every main push, preserving pull-request and manual scans with independent scheduling.
 
 - Verify RPM release packages with normalized binary member paths.
