@@ -25,7 +25,9 @@ func TestSyncIngestsDatabasesAndRows(t *testing.T) {
 		case "/search":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			filter := body["filter"].(map[string]any)
 			switch filter["value"] {
@@ -47,7 +49,9 @@ func TestSyncIngestsDatabasesAndRows(t *testing.T) {
 					"has_more":false
 				}`))
 			default:
-				t.Fatalf("unexpected search filter: %v", filter["value"])
+				t.Errorf("unexpected search filter: %v", filter["value"])
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 		case "/databases/db1/query":
 			_, _ = w.Write([]byte(`{
@@ -69,7 +73,9 @@ func TestSyncIngestsDatabasesAndRows(t *testing.T) {
 				"has_more":false
 			}`))
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -108,11 +114,15 @@ func TestSyncIngestsCurrentDataSourcesAndRows(t *testing.T) {
 			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
 		case "/search":
 			if got := r.Header.Get("Notion-Version"); got != "2026-03-11" {
-				t.Fatalf("unexpected Notion-Version: %s", got)
+				t.Errorf("unexpected Notion-Version: %s", got)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			filter := body["filter"].(map[string]any)
 			switch filter["value"] {
@@ -135,7 +145,9 @@ func TestSyncIngestsCurrentDataSourcesAndRows(t *testing.T) {
 					"has_more":false
 				}`))
 			default:
-				t.Fatalf("unexpected search filter: %v", filter["value"])
+				t.Errorf("unexpected search filter: %v", filter["value"])
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 		case "/data_sources/ds1/query":
 			_, _ = w.Write([]byte(`{
@@ -156,7 +168,9 @@ func TestSyncIngestsCurrentDataSourcesAndRows(t *testing.T) {
 				"has_more":false
 			}`))
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -191,7 +205,9 @@ func TestIngestCommentsSkipsRestrictedResource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/comments" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte(`{"object":"error","status":403,"code":"restricted_resource","message":"Insufficient permissions for this endpoint."}`))
@@ -220,7 +236,9 @@ func TestSyncSkipsRestrictedResourceUsersAndContinuesDiscovery(t *testing.T) {
 		case "/search":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatal(err)
+				t.Error(err)
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 			filter := body["filter"].(map[string]any)
 			switch filter["value"] {
@@ -243,14 +261,18 @@ func TestSyncSkipsRestrictedResourceUsersAndContinuesDiscovery(t *testing.T) {
 			case "database":
 				_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
 			default:
-				t.Fatalf("unexpected search filter: %v", filter["value"])
+				t.Errorf("unexpected search filter: %v", filter["value"])
+				http.Error(w, "invalid test request", http.StatusBadRequest)
+				return
 			}
 		case "/blocks/page1/children":
 			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
 		case "/comments":
 			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -277,7 +299,9 @@ func TestSyncWarnsWhenAPIDiscoveryReturnsNothing(t *testing.T) {
 		case "/users", "/search":
 			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -305,7 +329,9 @@ func TestIngestPageMarksBlockSyncOnlyAfterSuccessfulWalk(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/blocks/page1/children" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if failBlocks {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -432,7 +458,9 @@ func TestWalkBlocksDoesNotRetirePreviousBlocksOnPartialWalk(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/blocks/page1/children" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if syncNumber == 1 {
 			_, _ = w.Write([]byte(`{
@@ -519,7 +547,9 @@ func TestWalkBlocksSkipsSyncedBlockCopyChildren(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"object":"error","status":404,"code":"object_not_found","message":"not found"}`))
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -550,7 +580,9 @@ func TestWalkBlocksSkipsUnsupportedBlockChildren(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/blocks/page1/children" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{
@@ -581,7 +613,9 @@ func TestIngestPageLeavesIncompleteWhenBlockChildrenUnsupported(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/blocks/page1/children" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{
@@ -630,7 +664,9 @@ func TestWalkBlocksRetiresMissingAPIBlocksAfterSuccessfulWalk(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/blocks/page1/children" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		if !includeBlock {
 			_, _ = w.Write([]byte(`{"object":"list","results":[],"has_more":false}`))
@@ -715,7 +751,9 @@ func TestWalkBlocksFetchesOriginalSyncedBlockChildren(t *testing.T) {
 				"has_more":false
 			}`))
 		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 	}))
 	defer server.Close()
@@ -943,7 +981,9 @@ func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/comments" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		attempts++
 		if attempts == 1 {
@@ -989,7 +1029,9 @@ func TestIngestCommentsRetriesCloudflareTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		if r.URL.Path != "/comments" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.String())
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+			http.Error(w, "invalid test request", http.StatusBadRequest)
+			return
 		}
 		attempts++
 		if attempts == 1 {

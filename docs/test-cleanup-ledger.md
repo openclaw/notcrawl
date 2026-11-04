@@ -46,3 +46,15 @@ JSON decoding and transport-error retry cases; they cover different behavior.
 
 Validation: focused API race tests, full Go suite, static checks, isolated
 CLI smoke, independent review, and PR CI. No production or live Notion changes.
+
+## HTTP handler assertion failures
+
+Replaced 21 fatal assertions in Notion API HTTP fixture callbacks with nonfatal
+errors, HTTP 400 responses, and immediate returns. Fatal assertions belong in
+the test goroutine; these callbacks run in server goroutines and previously
+aborted requests with EOF, obscuring the rejected request and triggering retries.
+
+Request conditions, successful responses, temporary SQLite checks, and root-test
+fatal assertions remain intact. Validation covers a forced request mismatch
+before/after the change, focused race tests, full Go tests/static gates, isolated
+CLI smoke, structured review, and PR CI. No live Notion data or releases.
