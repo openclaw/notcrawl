@@ -13,10 +13,7 @@ import (
 
 func TestExporterWritesMarkdown(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Engineering", Source: "test", SyncedAt: now}); err != nil {
@@ -48,10 +45,7 @@ func TestExporterWritesMarkdown(t *testing.T) {
 
 func TestExporterUsesDisplayOrder(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Recipe", Alive: true, Source: "test", SyncedAt: now}); err != nil {
@@ -82,10 +76,7 @@ func TestExporterUsesDisplayOrder(t *testing.T) {
 
 func TestExporterMarksMissingDesktopBlocks(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Partial", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
@@ -128,10 +119,7 @@ func TestExporterMarksMissingDesktopBlocks(t *testing.T) {
 
 func TestExporterUsesNotionMCPMarkdownToRepairDesktopPage(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Partial", Alive: true, Source: store.SourceDesktop, SyncedAt: now}); err != nil {
@@ -168,10 +156,7 @@ func TestExporterUsesNotionMCPMarkdownToRepairDesktopPage(t *testing.T) {
 
 func TestExporterPrefersAPIBlocksOverNotionMCPMarkdown(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Page", Alive: true, Source: store.SourceAPI, SyncedAt: now}); err != nil {
@@ -204,10 +189,7 @@ func TestExporterPrefersAPIBlocksOverNotionMCPMarkdown(t *testing.T) {
 
 func TestExporterDoesNotMarkCompleteCachedBlocksIncomplete(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Complete", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
@@ -241,10 +223,7 @@ func TestExporterDoesNotMarkCompleteCachedBlocksIncomplete(t *testing.T) {
 
 func TestExporterRendersDatabaseProperties(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertCollection(ctx, store.Collection{
@@ -296,10 +275,7 @@ func TestExporterRendersDatabaseProperties(t *testing.T) {
 
 func TestExporterPreservesSchemaLessProperties(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{
@@ -335,10 +311,7 @@ func TestExporterPreservesSchemaLessProperties(t *testing.T) {
 
 func TestExporterPreservesAmbiguousSchemaLessTitleMatches(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{
@@ -370,10 +343,7 @@ func TestExporterPreservesAmbiguousSchemaLessTitleMatches(t *testing.T) {
 
 func TestExporterExplainsEmptyDesktopPage(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Empty or uncached", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
@@ -401,10 +371,7 @@ func TestExporterExplainsEmptyDesktopPage(t *testing.T) {
 
 func TestExporterPreservesAPIPropertyText(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{
@@ -454,10 +421,7 @@ func TestExporterPreservesAPIPropertyText(t *testing.T) {
 
 func TestExporterRequiresCompletedAPIBlockSync(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Partial API page", Alive: true, Source: "desktop", SyncedAt: now}); err != nil {
@@ -484,10 +448,7 @@ func TestExporterRequiresCompletedAPIBlockSync(t *testing.T) {
 
 func TestExporterRemovesEmojiFromPathNames(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertSpace(ctx, store.Space{ID: "space1", Name: "研究 🚀", Source: "test", SyncedAt: now}); err != nil {
@@ -510,10 +471,7 @@ func TestExporterRemovesEmojiFromPathNames(t *testing.T) {
 
 func TestExporterTruncatesMultibytePathNamesOnRuneBoundary(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	title := "где-у-меня-записаны-соображения-по-поводу-аллокации-затрат-на-подрядчиков-и-других-расходов"
@@ -542,10 +500,7 @@ func TestExporterResolvesTeamspaceParents(t *testing.T) {
 	for _, parent := range []string{"team", "collection", "block"} {
 		t.Run(parent, func(t *testing.T) {
 			ctx := context.Background()
-			st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
+			st := openTestStore(t)
 			defer st.Close()
 			now := store.NowMS()
 			if err := st.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Acme Org", Source: "test", SyncedAt: now}); err != nil {
@@ -593,10 +548,7 @@ func TestExporterResolvesTeamspaceParents(t *testing.T) {
 
 func TestExporterUsesReadableMissingSpaceFallback(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	spaceID := "52f1c029-ec85-4ff5-bd43-c6d6ea9259e0"
@@ -617,10 +569,7 @@ func TestExporterUsesReadableMissingSpaceFallback(t *testing.T) {
 
 func TestExporterPrunesStaleMarkdown(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	if err := st.UpsertPage(ctx, store.Page{ID: "page1", Title: "Launch", Alive: true, Source: "test", SyncedAt: now}); err != nil {
@@ -657,4 +606,13 @@ func TestExporterPrunesStaleMarkdown(t *testing.T) {
 	if _, err := os.Stat(keepNote); err != nil {
 		t.Fatalf("expected non-markdown file to remain: %v", err)
 	}
+}
+
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
