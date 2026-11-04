@@ -538,72 +538,56 @@ func TestExporterTruncatesMultibytePathNamesOnRuneBoundary(t *testing.T) {
 	}
 }
 
-func TestExporterUsesWorkspaceAndTeamspacePath(t *testing.T) {
-	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	now := store.NowMS()
-	if err := st.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Acme Org", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertTeam(ctx, store.Team{ID: "team1", SpaceID: "space1", Name: "Research Lab", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertPage(ctx, store.Page{ID: "page1", SpaceID: "space1", ParentID: "team1", ParentTable: "team", Title: "Plan", Alive: true, Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
+func TestExporterResolvesTeamspaceParents(t *testing.T) {
+	for _, parent := range []string{"team", "collection", "block"} {
+		t.Run(parent, func(t *testing.T) {
+			ctx := context.Background()
+			st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			now := store.NowMS()
+			if err := st.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Acme Org", Source: "test", SyncedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.UpsertTeam(ctx, store.Team{ID: "team1", SpaceID: "space1", Name: "Research Lab", Source: "test", SyncedAt: now}); err != nil {
+				t.Fatal(err)
+			}
+			page := store.Page{ID: "page1", SpaceID: "space1", ParentID: "team1", ParentTable: parent, Title: "Plan", Alive: true, Source: "test", SyncedAt: now}
+			switch parent {
+			case "collection":
+				if err := st.UpsertCollection(ctx, store.Collection{ID: "collection1", SpaceID: "space1", ParentID: "team1", ParentTable: "team", Name: "Roadmap", Source: "test", SyncedAt: now}); err != nil {
+					t.Fatal(err)
+				}
+				page.ParentID, page.CollectionID = "collection1", "collection1"
+			case "block":
+				if err := st.UpsertBlock(ctx, store.Block{ID: "block1", SpaceID: "space1", ParentID: "team1", ParentTable: "team", Type: "text", Text: "parent", Alive: true, Source: "test", SyncedAt: now}); err != nil {
+					t.Fatal(err)
+				}
+				page.ParentID = "block1"
+			}
+			if err := st.UpsertPage(ctx, page); err != nil {
+				t.Fatal(err)
+			}
 
-	dir := t.TempDir()
-	s, err := Exporter{Store: st, Dir: dir}.Export(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(dir, "acme-org", "research-lab", "plan-page1.md")
-	if len(s.Files) != 1 || s.Files[0] != want {
-		t.Fatalf("unexpected export path: %+v, want %s", s.Files, want)
-	}
-	b, err := os.ReadFile(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(b)
-	if !strings.Contains(text, `team_id: "team1"`) || !strings.Contains(text, `team: "Research Lab"`) {
-		t.Fatalf("missing team front matter:\n%s", text)
-	}
-}
-
-func TestExporterResolvesTeamspaceThroughCollectionParent(t *testing.T) {
-	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	now := store.NowMS()
-	if err := st.UpsertSpace(ctx, store.Space{ID: "space1", Name: "Acme Org", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertTeam(ctx, store.Team{ID: "team1", SpaceID: "space1", Name: "Research Lab", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertCollection(ctx, store.Collection{ID: "collection1", SpaceID: "space1", ParentID: "team1", ParentTable: "team", Name: "Roadmap", Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.UpsertPage(ctx, store.Page{ID: "page1", SpaceID: "space1", ParentID: "collection1", ParentTable: "collection", CollectionID: "collection1", Title: "Row", Alive: true, Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-
-	dir := t.TempDir()
-	s, err := Exporter{Store: st, Dir: dir}.Export(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(dir, "acme-org", "research-lab", "row-page1.md")
-	if len(s.Files) != 1 || s.Files[0] != want {
-		t.Fatalf("unexpected export path: %+v, want %s", s.Files, want)
+			dir := t.TempDir()
+			summary, err := (Exporter{Store: st, Dir: dir}).Export(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := filepath.Join(dir, "acme-org", "research-lab", "plan-page1.md")
+			if len(summary.Files) != 1 || summary.Files[0] != want {
+				t.Fatalf("unexpected export path: %+v, want %s", summary.Files, want)
+			}
+			data, err := os.ReadFile(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if text := string(data); !strings.Contains(text, `team_id: "team1"`) || !strings.Contains(text, `team: "Research Lab"`) {
+				t.Fatalf("missing team front matter:\n%s", text)
+			}
+		})
 	}
 }
 
