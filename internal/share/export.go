@@ -52,17 +52,9 @@ func encodeExportRows(ctx context.Context, db *sql.DB, table string, w io.Writer
 	count := 0
 	enc := json.NewEncoder(w)
 	for rows.Next() {
-		values := make([]any, len(cols))
-		ptrs := make([]any, len(cols))
-		for i := range values {
-			ptrs[i] = &values[i]
-		}
-		if err := rows.Scan(ptrs...); err != nil {
+		row, err := scanSnapshotRow(rows, cols)
+		if err != nil {
 			return 0, err
-		}
-		row := map[string]any{}
-		for i, col := range cols {
-			row[col] = exportValue(values[i])
 		}
 		fields := map[string]string{}
 		for key, value := range row {

@@ -87,6 +87,10 @@ func scanImportRow(rows *sql.Rows) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return scanSnapshotRow(rows, cols)
+}
+
+func scanSnapshotRow(rows *sql.Rows, cols []string) (map[string]any, error) {
 	values := make([]any, len(cols))
 	ptrs := make([]any, len(cols))
 	for i := range values {
