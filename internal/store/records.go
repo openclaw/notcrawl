@@ -79,68 +79,73 @@ func (s *Store) UpsertTeam(ctx context.Context, x Team) error {
 }
 
 func (s *Store) UpsertPage(ctx context.Context, x Page) error {
-	payload, err := json.Marshal(x)
+	return s.upsertSourceRecord(ctx, sourceRecord{
+		kind: "page", id: x.ID, source: x.Source, syncedAt: x.SyncedAt, alive: x.Alive, payload: x,
+	}, func(_ bool) error {
+		return s.writeCanonicalPage(ctx, x)
+	}, func() error {
+		return s.markPageFTS(ctx, x.ID)
+	})
+}
+
+type sourceRecord struct {
+	kind, id, source string
+	syncedAt         int64
+	alive            bool
+	payload          any
+}
+
+func (s *Store) upsertSourceRecord(ctx context.Context, record sourceRecord, writeCanonical func(bool) error, refreshFTS func() error) error {
+	payload, err := json.Marshal(record.payload)
 	if err != nil {
 		return err
 	}
-	canonicalSource, canonicalLive, exists, err := s.canonicalRecordSource(ctx, "page", x.ID)
+	canonicalSource, canonicalLive, exists, err := s.canonicalRecordSource(ctx, record.kind, record.id)
 	if err != nil {
 		return err
 	}
 	sourcePayload := string(payload)
-	if !x.Alive {
+	if !record.alive {
 		sourcePayload = ""
 	}
-	if x.Alive && exists && canonicalSource != x.Source && canonicalLive && !sourcePreferred(x.Source, canonicalSource) {
-		sourcePayload, err = s.preferredFallbackPayload(ctx, "page", x.ID, x.Source, sourcePayload)
+	if record.alive && exists && canonicalSource != record.source && canonicalLive && !sourcePreferred(record.source, canonicalSource) {
+		sourcePayload, err = s.preferredFallbackPayload(ctx, record.kind, record.id, record.source, sourcePayload)
 		if err != nil {
 			return err
 		}
 	}
-	if err := s.upsertRecordSource(ctx, "page", x.ID, x.Source, x.SyncedAt, x.Alive, sourcePayload); err != nil {
+	if err := s.upsertRecordSource(ctx, record.kind, record.id, record.source, record.syncedAt, record.alive, sourcePayload); err != nil {
 		return err
 	}
-	if !exists {
-		if err := s.writeCanonicalPage(ctx, x); err != nil {
-			return err
-		}
-		if err := s.clearRecordSourcePayload(ctx, "page", x.ID, x.Source); err != nil {
-			return err
-		}
-		if err := s.refreshRecordAlive(ctx, "page", x.ID); err != nil {
-			return err
-		}
-		return s.markPageFTS(ctx, x.ID)
-	}
-	if !x.Alive {
-		if canonicalSource == x.Source {
-			if _, err := s.promoteFallbackRecord(ctx, "page", x.ID); err != nil {
+	if exists && !record.alive {
+		if canonicalSource == record.source {
+			if _, err := s.promoteFallbackRecord(ctx, record.kind, record.id); err != nil {
 				return err
 			}
 		}
-		if err := s.refreshRecordAlive(ctx, "page", x.ID); err != nil {
+		if err := s.refreshRecordAlive(ctx, record.kind, record.id); err != nil {
 			return err
 		}
-		return s.markPageFTS(ctx, x.ID)
+		return refreshFTS()
 	}
-	if canonicalSource != x.Source && canonicalLive && !sourcePreferred(x.Source, canonicalSource) {
-		return s.refreshRecordAlive(ctx, "page", x.ID)
+	if exists && canonicalSource != record.source && canonicalLive && !sourcePreferred(record.source, canonicalSource) {
+		return s.refreshRecordAlive(ctx, record.kind, record.id)
 	}
-	if canonicalSource != x.Source && canonicalLive {
-		if err := s.saveCanonicalPayload(ctx, "page", x.ID, canonicalSource); err != nil {
+	if exists && canonicalSource != record.source && canonicalLive {
+		if err := s.saveCanonicalPayload(ctx, record.kind, record.id, canonicalSource); err != nil {
 			return err
 		}
 	}
-	if err := s.writeCanonicalPage(ctx, x); err != nil {
+	if err := writeCanonical(exists); err != nil {
 		return err
 	}
-	if err := s.clearRecordSourcePayload(ctx, "page", x.ID, x.Source); err != nil {
+	if err := s.clearRecordSourcePayload(ctx, record.kind, record.id, record.source); err != nil {
 		return err
 	}
-	if err := s.refreshRecordAlive(ctx, "page", x.ID); err != nil {
+	if err := s.refreshRecordAlive(ctx, record.kind, record.id); err != nil {
 		return err
 	}
-	return s.markPageFTS(ctx, x.ID)
+	return refreshFTS()
 }
 
 func (s *Store) writeCanonicalPage(ctx context.Context, x Page) error {
@@ -170,86 +175,29 @@ func (s *Store) writeCanonicalPage(ctx context.Context, x Page) error {
 }
 
 func (s *Store) UpsertBlock(ctx context.Context, x Block) error {
-	payload, err := json.Marshal(x)
-	if err != nil {
-		return err
-	}
-	canonicalSource, canonicalLive, exists, err := s.canonicalRecordSource(ctx, "block", x.ID)
-	if err != nil {
-		return err
-	}
-	sourcePayload := string(payload)
-	if !x.Alive {
-		sourcePayload = ""
-	}
-	if x.Alive && exists && canonicalSource != x.Source && canonicalLive && !sourcePreferred(x.Source, canonicalSource) {
-		sourcePayload, err = s.preferredFallbackPayload(ctx, "block", x.ID, x.Source, sourcePayload)
-		if err != nil {
-			return err
+	var previousPageID string
+	return s.upsertSourceRecord(ctx, sourceRecord{
+		kind: "block", id: x.ID, source: x.Source, syncedAt: x.SyncedAt, alive: x.Alive, payload: x,
+	}, func(existing bool) error {
+		if existing {
+			current, err := s.blockByID(ctx, x.ID)
+			if err != nil {
+				return err
+			}
+			previousPageID = current.PageID
 		}
-	}
-	if err := s.upsertRecordSource(ctx, "block", x.ID, x.Source, x.SyncedAt, x.Alive, sourcePayload); err != nil {
-		return err
-	}
-	if !exists {
-		if err := s.writeCanonicalBlock(ctx, x); err != nil {
-			return err
-		}
-		if err := s.clearRecordSourcePayload(ctx, "block", x.ID, x.Source); err != nil {
-			return err
-		}
-		if err := s.refreshRecordAlive(ctx, "block", x.ID); err != nil {
-			return err
-		}
-		if x.PageID != "" {
-			return s.markPageFTS(ctx, x.PageID)
-		}
-		return nil
-	}
-	if !x.Alive {
-		if canonicalSource == x.Source {
-			if _, err := s.promoteFallbackRecord(ctx, "block", x.ID); err != nil {
+		return s.writeCanonicalBlock(ctx, x)
+	}, func() error {
+		if previousPageID != "" && previousPageID != x.PageID {
+			if err := s.markPageFTS(ctx, previousPageID); err != nil {
 				return err
 			}
 		}
-		if err := s.refreshRecordAlive(ctx, "block", x.ID); err != nil {
-			return err
-		}
 		if x.PageID != "" {
 			return s.markPageFTS(ctx, x.PageID)
 		}
 		return nil
-	}
-	if canonicalSource != x.Source && canonicalLive && !sourcePreferred(x.Source, canonicalSource) {
-		return s.refreshRecordAlive(ctx, "block", x.ID)
-	}
-	if canonicalSource != x.Source && canonicalLive {
-		if err := s.saveCanonicalPayload(ctx, "block", x.ID, canonicalSource); err != nil {
-			return err
-		}
-	}
-	current, err := s.blockByID(ctx, x.ID)
-	if err != nil {
-		return err
-	}
-	if err := s.writeCanonicalBlock(ctx, x); err != nil {
-		return err
-	}
-	if err := s.clearRecordSourcePayload(ctx, "block", x.ID, x.Source); err != nil {
-		return err
-	}
-	if err := s.refreshRecordAlive(ctx, "block", x.ID); err != nil {
-		return err
-	}
-	if current.PageID != "" && current.PageID != x.PageID {
-		if err := s.markPageFTS(ctx, current.PageID); err != nil {
-			return err
-		}
-	}
-	if x.PageID != "" {
-		return s.markPageFTS(ctx, x.PageID)
-	}
-	return nil
+	})
 }
 
 func (s *Store) writeCanonicalBlock(ctx context.Context, x Block) error {
@@ -290,68 +238,13 @@ func (s *Store) UpsertCollection(ctx context.Context, x Collection) error {
 }
 
 func (s *Store) UpsertComment(ctx context.Context, x Comment) error {
-	payload, err := json.Marshal(x)
-	if err != nil {
-		return err
-	}
-	canonicalSource, canonicalLive, exists, err := s.canonicalRecordSource(ctx, "comment", x.ID)
-	if err != nil {
-		return err
-	}
-	sourcePayload := string(payload)
-	if !x.Alive {
-		sourcePayload = ""
-	}
-	if x.Alive && exists && canonicalSource != x.Source && canonicalLive && !sourcePreferred(x.Source, canonicalSource) {
-		sourcePayload, err = s.preferredFallbackPayload(ctx, "comment", x.ID, x.Source, sourcePayload)
-		if err != nil {
-			return err
-		}
-	}
-	if err := s.upsertRecordSource(ctx, "comment", x.ID, x.Source, x.SyncedAt, x.Alive, sourcePayload); err != nil {
-		return err
-	}
-	if !exists {
-		if err := s.writeCanonicalComment(ctx, x); err != nil {
-			return err
-		}
-		if err := s.clearRecordSourcePayload(ctx, "comment", x.ID, x.Source); err != nil {
-			return err
-		}
-		if err := s.refreshRecordAlive(ctx, "comment", x.ID); err != nil {
-			return err
-		}
+	return s.upsertSourceRecord(ctx, sourceRecord{
+		kind: "comment", id: x.ID, source: x.Source, syncedAt: x.SyncedAt, alive: x.Alive, payload: x,
+	}, func(_ bool) error {
+		return s.writeCanonicalComment(ctx, x)
+	}, func() error {
 		return s.refreshCommentFTS(ctx, x.ID)
-	}
-	if !x.Alive {
-		if canonicalSource == x.Source {
-			if _, err := s.promoteFallbackRecord(ctx, "comment", x.ID); err != nil {
-				return err
-			}
-		}
-		if err := s.refreshRecordAlive(ctx, "comment", x.ID); err != nil {
-			return err
-		}
-		return s.refreshCommentFTS(ctx, x.ID)
-	}
-	if canonicalSource != x.Source && canonicalLive && !sourcePreferred(x.Source, canonicalSource) {
-		return s.refreshRecordAlive(ctx, "comment", x.ID)
-	}
-	if canonicalSource != x.Source && canonicalLive {
-		if err := s.saveCanonicalPayload(ctx, "comment", x.ID, canonicalSource); err != nil {
-			return err
-		}
-	}
-	if err := s.writeCanonicalComment(ctx, x); err != nil {
-		return err
-	}
-	if err := s.clearRecordSourcePayload(ctx, "comment", x.ID, x.Source); err != nil {
-		return err
-	}
-	if err := s.refreshRecordAlive(ctx, "comment", x.ID); err != nil {
-		return err
-	}
-	return s.refreshCommentFTS(ctx, x.ID)
+	})
 }
 
 func (s *Store) writeCanonicalComment(ctx context.Context, x Comment) error {
