@@ -643,7 +643,7 @@ func TestStoreOrdersBlocksByDisplayOrder(t *testing.T) {
 	}
 }
 
-func TestStoreBuildsPageFTSInDisplayTreeOrder(t *testing.T) {
+func TestStoreDisplayTreeOrder(t *testing.T) {
 	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -665,44 +665,24 @@ func TestStoreBuildsPageFTSInDisplayTreeOrder(t *testing.T) {
 		}
 	}
 
-	var body string
-	if err := st.DB().QueryRowContext(ctx, `select body from page_fts where page_id = ?`, "page1").Scan(&body); err != nil {
-		t.Fatal(err)
-	}
-	if body != "first\nsecond\nthird" {
-		t.Fatalf("unexpected FTS body order: %q", body)
-	}
-}
-
-func TestStoreReturnsPageBlocksInDisplayTreeOrder(t *testing.T) {
-	st, err := Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-	ctx := context.Background()
-	now := NowMS()
-	if err := st.UpsertPage(ctx, Page{ID: "page1", Title: "Recipe", Alive: true, Source: "test", SyncedAt: now}); err != nil {
-		t.Fatal(err)
-	}
-	blocks := []Block{
-		{ID: "z-root", PageID: "page1", ParentID: "page1", Type: "text", Text: "third", DisplayOrder: 2, CreatedTime: now, Alive: true, Source: "test", SyncedAt: now},
-		{ID: "a-child", PageID: "page1", ParentID: "a-root", Type: "text", Text: "second", DisplayOrder: 1, CreatedTime: now, Alive: true, Source: "test", SyncedAt: now},
-		{ID: "a-root", PageID: "page1", ParentID: "page1", Type: "text", Text: "first", DisplayOrder: 1, CreatedTime: now, Alive: true, Source: "test", SyncedAt: now},
-	}
-	for _, block := range blocks {
-		if err := st.UpsertBlock(ctx, block); err != nil {
+	t.Run("FTS", func(t *testing.T) {
+		var body string
+		if err := st.DB().QueryRowContext(ctx, `select body from page_fts where page_id = ?`, "page1").Scan(&body); err != nil {
 			t.Fatal(err)
 		}
-	}
-
-	got, err := st.PageBlocks(ctx, "page1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 3 || got[0].ID != "a-root" || got[1].ID != "a-child" || got[2].ID != "z-root" {
-		t.Fatalf("unexpected block tree order: %+v", got)
-	}
+		if body != "first\nsecond\nthird" {
+			t.Fatalf("unexpected FTS body order: %q", body)
+		}
+	})
+	t.Run("page blocks", func(t *testing.T) {
+		got, err := st.PageBlocks(ctx, "page1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 3 || got[0].ID != "a-root" || got[1].ID != "a-child" || got[2].ID != "z-root" {
+			t.Fatalf("unexpected block tree order: %+v", got)
+		}
+	})
 }
 
 func TestStoreStatusAndOptimize(t *testing.T) {
