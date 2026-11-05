@@ -85,6 +85,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          # Keep cross-platform snapshot builds separate from faster checks.
+          cache-dependency-path: |
+            go.sum
+            Makefile
+            .goreleaser.yml
+            .goreleaser-release.yml
+            .github/workflows/ci.yml
       - name: Install GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
