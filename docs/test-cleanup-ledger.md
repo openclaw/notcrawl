@@ -58,3 +58,14 @@ Request conditions, successful responses, temporary SQLite checks, and root-test
 fatal assertions remain intact. Validation covers a forced request mismatch
 before/after the change, focused race tests, full Go tests/static gates, isolated
 CLI smoke, structured review, and PR CI. No live Notion data or releases.
+
+## Display-order assertions require exported blocks
+
+Require both fixture blocks to appear in the exported Markdown in display order.
+The old index comparison passed when the first block or both blocks were absent.
+Keep the real temporary SQLite archive, exported-file read and block fixtures.
+
+Disposable post-export overlays reproduce both missing-output false greens, then
+verify rejection after the fix. Reversed blocks fail before and after; healthy
+exports pass under the race detector. Validate full Go/static gates, isolated CLI
+smoke, independent review and CI. No production, live Notion data or releases.

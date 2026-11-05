@@ -69,7 +69,8 @@ func TestExporterUsesDisplayOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(b)
-	if strings.Index(text, "- flour") > strings.Index(text, "- salt") {
+	flour, salt := strings.Index(text, "- flour"), strings.Index(text, "- salt")
+	if flour < 0 || salt <= flour {
 		t.Fatalf("markdown did not preserve display order:\n%s", text)
 	}
 }
