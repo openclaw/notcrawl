@@ -69,3 +69,13 @@ Disposable post-export overlays reproduce both missing-output false greens, then
 verify rejection after the fix. Reversed blocks fail before and after; healthy
 exports pass under the race detector. Validate full Go/static gates, isolated CLI
 smoke, independent review and CI. No production, live Notion data or releases.
+
+## Metadata command presence
+
+Require each expected plain-text command to exist before checking its JSON flag.
+The old map lookup accepted missing commands as `false`; independent omissions
+of sync, tap, publish, subscribe and update all passed the old test and fail the
+repaired test under the race detector. Healthy metadata passes both versions.
+Keep the existing fixture, command lists and positive JSON checks unchanged.
+Validate full CLI race tests, `make check`, built-CLI metadata, review and platform
+CI. No production changes, live Notion data, credentials or releases.
