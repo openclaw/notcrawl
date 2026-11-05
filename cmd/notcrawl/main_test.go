@@ -474,7 +474,11 @@ func TestMetadataDoesNotMarkPlainTextCommandsAsJSON(t *testing.T) {
 		t.Fatalf("invalid metadata JSON: %v\n%s", err, stdout.String())
 	}
 	for _, name := range []string{"sync", "tap", "publish", "subscribe", "update"} {
-		if manifest.Commands[name].JSON {
+		command, ok := manifest.Commands[name]
+		if !ok {
+			t.Fatalf("metadata missing command %q", name)
+		}
+		if command.JSON {
 			t.Fatalf("%s should not be advertised as JSON", name)
 		}
 	}
