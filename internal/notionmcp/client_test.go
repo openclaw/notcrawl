@@ -25,6 +25,15 @@ type gatewayFixture struct {
 	tools       []toolDefinition
 }
 
+func openTestStore(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
 func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
 	meta := &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}
 	variants := []toolDefinition{
@@ -44,10 +53,7 @@ func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
 				fixture := &gatewayFixture{tools: tools}
 				server := httptest.NewServer(http.HandlerFunc(fixture.serve))
 				defer server.Close()
-				st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-				if err != nil {
-					t.Fatal(err)
-				}
+				st := openTestStore(t)
 				defer st.Close()
 				summary, err := (Client{
 					BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
@@ -69,10 +75,7 @@ func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
 
 func TestSyncRepairsIncompleteDesktopPages(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	now := store.NowMS()
 	pages := []store.Page{
@@ -178,10 +181,7 @@ func TestSyncRepairsIncompleteDesktopPages(t *testing.T) {
 
 func TestSyncReevaluatesRepairWhenDesktopSnapshotChanges(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	pageID := "77777777-7777-7777-7777-777777777777"
 	now := store.NowMS()
@@ -269,10 +269,7 @@ func TestSyncReevaluatesRepairWhenDesktopSnapshotChanges(t *testing.T) {
 
 func TestSyncRefetchesRepairWhenPartialDesktopSnapshotChanges(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	pageID := "88888888-8888-8888-8888-888888888888"
 	now := store.NowMS()
@@ -324,10 +321,7 @@ func TestSyncRefetchesRepairWhenPartialDesktopSnapshotChanges(t *testing.T) {
 
 func TestSyncRetiresRepairWhenDesktopPageIsTombstoned(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	pageID := "99999999-9999-9999-9999-999999999999"
 	now := store.NowMS()
@@ -375,10 +369,7 @@ func TestSyncRetiresRepairWhenDesktopPageIsTombstoned(t *testing.T) {
 
 func TestSyncRepairsIncompleteAPIBodyUntilAPISyncCompletes(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	pageID := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	now := store.NowMS()
@@ -430,10 +421,7 @@ func TestSyncRepairsIncompleteAPIBodyUntilAPISyncCompletes(t *testing.T) {
 
 func TestSyncTargetedQueryDiscoversPage(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	fixture := &gatewayFixture{}
 	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
@@ -474,10 +462,7 @@ func TestSyncTargetedQueryDiscoversPage(t *testing.T) {
 
 func TestSyncLeavesExistingContentUntouchedWhenConnectorBodyIsEmpty(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "notcrawl.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	st := openTestStore(t)
 	defer st.Close()
 	pageID := "66666666-6666-6666-6666-666666666666"
 	now := store.NowMS()
