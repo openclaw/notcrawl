@@ -9,13 +9,16 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	defaultBaseURL    = "https://chatgpt.com/backend-api/wham/apps"
-	maxToolsListPages = 100
+	defaultBaseURL      = "https://chatgpt.com/backend-api/wham/apps"
+	maxToolsListPages   = 100
+	maxRateLimitRetries = 5
+	maxRetryDelay       = 60 * time.Second
 )
 
 type authInfo struct {
@@ -224,26 +227,12 @@ func (g *gatewayClient) rpcCall(ctx context.Context, method string, params, out 
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.baseURL, strings.NewReader(string(body)))
+	status, raw, err := g.post(ctx, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+g.auth.AccessToken)
-	req.Header.Set("Content-Type", "application/json")
-	if g.auth.AccountID != "" {
-		req.Header.Set("ChatGPT-Account-ID", g.auth.AccountID)
-	}
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to call Codex apps gateway: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read Codex apps gateway response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Codex apps gateway returned HTTP %d", resp.StatusCode)
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("Codex apps gateway returned HTTP %d", status)
 	}
 	var envelope rpcEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
@@ -273,24 +262,72 @@ func (g *gatewayClient) rpcNotify(ctx context.Context, method string, params any
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.baseURL, strings.NewReader(string(body)))
+	status, _, err := g.post(ctx, body)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+g.auth.AccessToken)
-	req.Header.Set("Content-Type", "application/json")
-	if g.auth.AccountID != "" {
-		req.Header.Set("ChatGPT-Account-ID", g.auth.AccountID)
-	}
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to notify Codex apps gateway: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("Codex apps gateway notification returned HTTP %d", resp.StatusCode)
+	if status < 200 || status >= 300 {
+		return fmt.Errorf("Codex apps gateway notification returned HTTP %d", status)
 	}
 	return nil
+}
+
+func (g *gatewayClient) post(ctx context.Context, body []byte) (int, []byte, error) {
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.baseURL, strings.NewReader(string(body)))
+		if err != nil {
+			return 0, nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+g.auth.AccessToken)
+		req.Header.Set("Content-Type", "application/json")
+		if g.auth.AccountID != "" {
+			req.Header.Set("ChatGPT-Account-ID", g.auth.AccountID)
+		}
+		resp, err := g.http.Do(req)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to call Codex apps gateway: %w", err)
+		}
+		raw, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to read Codex apps gateway response: %w", err)
+		}
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable
+		if !retryable || attempt >= maxRateLimitRetries {
+			return resp.StatusCode, raw, nil
+		}
+		if err := sleepContext(ctx, retryDelay(resp.Header.Get("Retry-After"), attempt)); err != nil {
+			return 0, nil, err
+		}
+	}
+}
+
+func retryDelay(retryAfter string, attempt int) time.Duration {
+	retryAfter = strings.TrimSpace(retryAfter)
+	if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds >= 0 {
+		if seconds >= int(maxRetryDelay/time.Second) {
+			return maxRetryDelay
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if at, err := http.ParseTime(retryAfter); err == nil {
+		return min(max(time.Until(at), 0), maxRetryDelay)
+	}
+	return min(time.Second<<attempt, maxRetryDelay)
+}
+
+func sleepContext(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func resolveNotionTools(tools []toolDefinition, connectorID string) (notionToolset, error) {
