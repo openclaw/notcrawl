@@ -120,3 +120,18 @@ Reuse the earlier baseline only after matching source/test bytes, module files,
 store tree and runtime. Temporary overlays never modify production files.
 Validate local Go/static/smoke checks, independent review and platform/packaging
 CI. No new fixtures, product changes, live Notion data or releases.
+
+## Independent Desktop export column expectations
+
+Removed the envelope test's call to the production column selector. Keep explicit
+block, collection and comment column expectations in the existing fixture. Add
+a distinct signed property URL so format sanitization cannot mask skipped
+collection-schema sanitization through the exporter's second text pass. Preserve
+ordinary properties, numeric precision, wrapper paths and source immutability.
+
+Before/after full text-package race comparisons show healthy behavior passing
+and the previously missed schema omission failing after repair. Existing block
+property and comment-content omission controls remain detected. Disposable Go
+overlays never write production files. Validate full Go/static gates, isolated
+CLI smoke, independent review and cross-platform CI. No new test function,
+production behavior, live Notion data or releases.

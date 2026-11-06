@@ -29,10 +29,17 @@ func exportJSON(t *testing.T, value any) string {
 func TestExportFieldsDesktopEnvelopes(t *testing.T) {
 	u := url.URL{Scheme: "https", Host: "files.example", Path: "/attachment"}
 	u.RawQuery = url.Values{"X-Amz-Signature": {"redacted"}, "X-Amz-Credential": {"placeholder"}, "download": {"1"}}.Encode()
-	properties := `{"number":9223372036854775807,"fraction":0.10000000000000001,"raw_json":"ordinary text","format":"not JSON"}`
+	propertyURL := u
+	propertyURL.Path = "/property"
+	properties := `{"url":"` + propertyURL.String() + `","number":9223372036854775807,"fraction":0.10000000000000001,"raw_json":"ordinary text","format":"not JSON"}`
 	format := exportJSON(t, map[string]any{"display_source": u.String(), "number": json.Number("-9223372036854775808")})
 	block := desktopExportEnvelope()
 	block["properties"], block["format"] = properties, format
+	columns := map[string][]string{
+		"block":      {"properties", "content", "format"},
+		"collection": {"schema", "format"},
+		"comment":    {"content"},
+	}
 	for name, envelope := range map[string]map[string]any{
 		"block": block,
 		"collection": {
@@ -82,13 +89,13 @@ func TestExportFieldsDesktopEnvelopes(t *testing.T) {
 					if !reflect.DeepEqual(object["created_time"], envelope["created_time"]) {
 						t.Fatal("outer integer rounded")
 					}
-					for _, column := range desktopEnvelopeJSONFields(envelope) {
+					for _, column := range columns[name] {
 						value, err := decodeExportJSON(object[column].(string))
 						if err != nil {
 							t.Fatal(err)
 						}
 						if column == "properties" || column == "schema" {
-							want, err := decodeExportJSON(properties)
+							want, err := decodeExportJSON(strings.Replace(properties, propertyURL.String(), "https://files.example/property?download=1", 1))
 							if err != nil || !reflect.DeepEqual(value, want) {
 								t.Fatalf("ordinary properties/numbers changed: %v", err)
 							}
