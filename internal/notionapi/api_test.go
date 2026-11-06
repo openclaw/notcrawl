@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1056,25 +1055,6 @@ func TestSyncUsesDefaultHTTPClientWhenHTTPNil(t *testing.T) {
 	}
 }
 
-func TestListUsersRejectsRepeatedCursor(t *testing.T) {
-	pager := &repeatingListCursorPager{cursor: "same"}
-	server := httptest.NewServer(http.HandlerFunc(pager.serve))
-	defer server.Close()
-
-	_, err := (Client{
-		BaseURL: server.URL,
-		Version: "2022-06-28",
-		Token:   "secret",
-		HTTP:    server.Client(),
-	}).listUsers(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "repeated cursor") {
-		t.Fatalf("err = %v, want repeated cursor", err)
-	}
-	if pager.calls != 2 {
-		t.Fatalf("users/list calls = %d, want 2", pager.calls)
-	}
-}
-
 func TestNextListCursorRejectsRepeatedAndEmpty(t *testing.T) {
 	seen := map[string]bool{}
 	next, more, err := nextListCursor(obj{"has_more": true, "next_cursor": "abc"}, seen, "Notion users/list")
@@ -1093,25 +1073,6 @@ func TestNextListCursorRejectsRepeatedAndEmpty(t *testing.T) {
 	if err != nil || more || next != "" {
 		t.Fatalf("has_more false: next=%q more=%v err=%v", next, more, err)
 	}
-}
-
-type repeatingListCursorPager struct {
-	cursor string
-	calls  int
-}
-
-func (p *repeatingListCursorPager) serve(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/users" {
-		http.Error(w, "unexpected path "+r.URL.Path, http.StatusBadRequest)
-		return
-	}
-	p.calls++
-	if p.calls > 5 {
-		http.Error(w, "sticky pager was not stopped", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = fmt.Fprintf(w, `{"object":"list","results":[],"has_more":true,"next_cursor":%q}`, p.cursor)
 }
 
 func TestWalkBlocksPreservesCodeBlockWhitespace(t *testing.T) {

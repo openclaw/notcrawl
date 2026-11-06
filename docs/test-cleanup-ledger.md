@@ -1,260 +1,80 @@
 # Test cleanup ledger
 
-## Markdown teamspace paths
+## Audit boundary
 
-Consolidated four tests into three exporter cases: direct team, collection
-parent, and block parent. Removed `internal/markdown/paths_test.go`, whose two
-SQLite fixtures repeated parent relationships exercised by the exporter.
+Read all 38 Go test files, the synthetic workspace SQL fixture, the release-script
+test runner, and built-CLI smoke recipe at the pinned audit revision. Inspect
+owning code where needed to distinguish duplicate setup from distinct behavior.
+This closes this bounded notcrawl pass; other crawl-app audits remain separate.
 
-The retained cases export a real Markdown file from a temporary archive and
-verify the exact workspace/teamspace path plus team ID/name front matter.
-Collection and block cases now check metadata as well as resolution; block
-parent coverage now reaches the exporter instead of stopping at its resolver.
-No production behavior changed. The workspace SQL fixture remains in use by
-`TestIngestWorkspaceScope` and must stay.
+Fixtures use temporary archives, loopback HTTP, synthetic connector credentials
+and local Git repositories. Keep `internal/notiondesktop/testdata/workspaces.sql`:
+workspace ingestion and CLI progress both consume it. No other tracked testdata
+or fixture files remain in this inventory.
 
-Validation: focused Markdown tests, full Go suite/static gates, isolated CLI
-smoke, structured autoreview, and PR CI including cross-platform tests and
-credential-free packaging. No live Notion data, credentials, or releases.
+## Pagination cleanup
 
-Remaining: finish the semantic test/fixture audit across other packages and
-crawl apps; distinct parsing, ingestion, and export layers are not duplicates
-merely because they share sample inputs.
+Remove the standalone users repeated-cursor test and its private pager from
+`internal/notionapi/api_test.go`. The unchanged `TestAPIPagination/users/repeat`
+case exercises the same client path, requires the same repeated-cursor error,
+and checks exactly two requests. Also remove the now-unused formatting import:
+39 test lines removed, with no production change.
 
-## Smoke output checks
+Keep long listings, cursor cycles, opaque cursor preservation, all seven API
+endpoints, per-parent block cursors, and failed-walk archive preservation.
+Keep direct cursor helper checks for empty cursors and completed listings; these
+assert contracts beyond the removed duplicate.
 
-The smoke recipe returned success while printing four `Broken pipe` errors on
-macOS: `grep -q` closed its input while the shell was still printing the captured
-help and JSON. Keep the same six patterns, consume their complete streams, and
-redirect matching lines to `/dev/null` so output remains quiet.
+Paired race-enabled comparisons retain healthy success and detection of a lost
+repeated-cursor diagnostic and prematurely stopped users pagination. Temporary
+Go overlays leave tracked production files unchanged. Full local gates,
+independent review and exact-head platform CI are required before landing.
 
-Validation runs the actual `make smoke` target and requires success without
-broken-pipe diagnostics. The temporary config and SQLite archive remain isolated;
-no product commands, assertions, release behavior, or live Notion data changed.
+## Earlier landed work
 
-## Official API response size
+| Scope | Result | PR |
+| --- | --- | --- |
+| Teamspace paths | Three real exporter cases replace duplicate resolver fixtures; preserve path and front matter. | [202](https://github.com/openclaw/notcrawl/pull/202) |
+| Smoke output | Consume complete captured output to avoid broken pipes; retain all six patterns. | [207](https://github.com/openclaw/notcrawl/pull/207) |
+| Response size | Share one oversized response rejection; retain exact-limit acceptance and one-request check. | [209](https://github.com/openclaw/notcrawl/pull/209) |
+| HTTP callbacks | Return explicit failure responses after nonfatal request assertions in server goroutines. | [214](https://github.com/openclaw/notcrawl/pull/214) |
+| Export order | Require both exported blocks before comparing positions. | [217](https://github.com/openclaw/notcrawl/pull/217) |
+| Metadata | Require advertised plain-text commands to exist before checking their JSON flags. | [218](https://github.com/openclaw/notcrawl/pull/218) |
+| Gateway cancellation | Cancel at the controlled retry response; retain cause, call count and real-server retry controls. | [223](https://github.com/openclaw/notcrawl/pull/223) |
+| MCP discovery | Share seven connector/query cases while preserving names, orders, properties, body and source. | [224](https://github.com/openclaw/notcrawl/pull/224) |
+| Reports | Compare all window labels, cutoffs, page, collection and comment counts. | [225](https://github.com/openclaw/notcrawl/pull/225) |
+| Desktop export | Use independent column expectations and distinct signed schema URLs; retain exact numbers and recovery bytes. | [226](https://github.com/openclaw/notcrawl/pull/226) |
+| Snapshot rejection | Share four invalid snapshot fixtures; check intended failures and unchanged destination rows. | [227](https://github.com/openclaw/notcrawl/pull/227) |
+| Markdown | Share property setup; remove repeated to-do render; require exact fallback escaping and safe code fences. | [228](https://github.com/openclaw/notcrawl/pull/228) |
+| Desktop cache | Share identical cache setup; retain distinct empty schemas and verify workspace collection names. | [229](https://github.com/openclaw/notcrawl/pull/229) |
+| Search | Require relevance before recency, preserving equal-rank ordering. | [230](https://github.com/openclaw/notcrawl/pull/230) |
+| CLI progress | Use synthetic Desktop input; require exact counts, searchable content and unchanged source bytes. | [231](https://github.com/openclaw/notcrawl/pull/231) |
+| API tables | Require both complete table/row mappings and searchable text. | [232](https://github.com/openclaw/notcrawl/pull/232) |
+| Database index | Compare complete exported index records, escaped names, headers and generated files. | [233](https://github.com/openclaw/notcrawl/pull/233) |
+| Comment retries | Separate status, explicit retry flag and HTML gateway cases; retain exact attempts and stored results. | [234](https://github.com/openclaw/notcrawl/pull/234) |
 
-Removed `TestDoRejectsOversizedSuccessBody`: it sent the same oversized JSON
-fixture over loopback HTTP as `TestDoDoesNotRetryOversizedSuccessBody` and
-asserted the same rejection. The retained case also checks that the client
-issues exactly one request. Moved the fixture-size guard into it and made it
-exact: one byte above the limit.
+## Retained contracts and limits
 
-Kept the exact-limit acceptance test and added its exact fixture-size guard,
-so the two tests cover opposite sides of the size boundary. Kept the small
-JSON decoding and transport-error retry cases; they cover different behavior.
+- Keep parsing, normalized storage, FTS, Markdown and CLI integration checks
+  separate where they cross different boundaries. Shared sample text alone does
+  not establish duplication.
+- Keep authoritative API retirement, malformed/partial discovery, rollback,
+  archived-page fallback and snapshot merge/restore cases. Desktop cache eviction
+  is non-authoritative; its absence and tombstone cases are distinct.
+- Keep MCP tool selection, repair invalidation, empty-body preservation, retry
+  budgets, cancellation, initialization, URL sanitization and credential routing.
+- Keep Desktop envelope decoding, exact integers, signed-capability sanitization,
+  untouched recovery payloads, and malformed-known-column rejection.
+- Keep Markdown completeness warnings, tree/display order, title/property output,
+  generated-only pruning, code whitespace/fences and attachment links.
+- Keep CLI read-only SQL, legacy archive inspection, non-mutating TUI JSON,
+  output close failures, help side effects and snapshot integer round trips.
+- Keep snapshot validation, provenance priority, optional revisions, exact numeric
+  conversion, generated-only Git commits and historical update behavior.
+- Keep config precedence, release-check timeout, SQLite privacy/pragmas, release
+  wrapper refusal checks and built-CLI smoke.
 
-Validation: focused API race tests, full Go suite, static checks, isolated
-CLI smoke, independent review, and PR CI. No production or live Notion changes.
-
-## HTTP handler assertion failures
-
-Replaced 21 fatal assertions in Notion API HTTP fixture callbacks with nonfatal
-errors, HTTP 400 responses, and immediate returns. Fatal assertions belong in
-the test goroutine; these callbacks run in server goroutines and previously
-aborted requests with EOF, obscuring the rejected request and triggering retries.
-
-Request conditions, successful responses, temporary SQLite checks, and root-test
-fatal assertions remain intact. Validation covers a forced request mismatch
-before/after the change, focused race tests, full Go tests/static gates, isolated
-CLI smoke, structured review, and PR CI. No live Notion data or releases.
-
-## Display-order assertions require exported blocks
-
-Require both fixture blocks to appear in the exported Markdown in display order.
-The old index comparison passed when the first block or both blocks were absent.
-Keep the real temporary SQLite archive, exported-file read and block fixtures.
-
-Disposable post-export overlays reproduce both missing-output false greens, then
-verify rejection after the fix. Reversed blocks fail before and after; healthy
-exports pass under the race detector. Validate full Go/static gates, isolated CLI
-smoke, independent review and CI. No production, live Notion data or releases.
-
-## Metadata command presence
-
-Require each expected plain-text command to exist before checking its JSON flag.
-The old map lookup accepted missing commands as `false`; independent omissions
-of sync, tap, publish, subscribe and update all passed the old test and fail the
-repaired test under the race detector. Healthy metadata passes both versions.
-Keep the existing fixture, command lists and positive JSON checks unchanged.
-Validate full CLI race tests, `make check`, built-CLI metadata, review and platform
-CI. No production changes, live Notion data, credentials or releases.
-
-## Gateway cancellation boundary
-
-Replace the cancellation case's loopback server and 25 ms deadline with a
-controlled transport returning the same 429 and 60-second retry delay. Cancel
-at that response, require the cancellation cause, and count transport calls
-so an extra request cannot hide behind a cancelled network context. Keep the
-real-server success/retry-limit cases and delay-bound table.
-
-Six before/after full MCP-package race suites: healthy cases pass, skipped
-backoff remains detected, and a fabricated deadline error accepted by the old
-case now fails. Temporary Go overlays leave production bytes unchanged.
-Validate local Go/static/smoke checks, independent review and platform CI with
-credential-free packaging. No live Notion data or releases.
-
-## Targeted MCP query fixture consolidation
-
-Fold the standalone query-discovery setup into the connector-selection matrix.
-Preserve the default tool list (including its legacy distractor), all three
-explicit name pairs, both tool orders and the same query/limit: seven cases.
-Share summary/query/page identity/source/properties/body assertions across all
-cases. Remove duplicated setup; the test file is fifteen lines shorter.
-
-Ten before/after full MCP-package race suites retain healthy success and
-detection of wrong page sources, missing properties/body and wrong tool
-precedence. Temporary overlays leave all three production files unchanged.
-Require local Go/static/smoke checks, independent review and platform/packaging
-CI. Synthetic fixtures only; no live Notion data, product changes or releases.
-
-## Complete report time-window assertions
-
-Keep the existing two-age SQLite fixture and compare all three report windows,
-including labels, latest-edit-anchored cutoffs, edited-page counts, active
-collections and comments. Replace the length/first-window-only assertion.
-
-Ten before/after report-package race suites retain count-error detection and
-now reject wrong duration, label and anchor faults accepted by the old test.
-Reuse the earlier baseline only after matching source/test bytes, module files,
-store tree and runtime. Temporary overlays never modify production files.
-Validate local Go/static/smoke checks, independent review and platform/packaging
-CI. No new fixtures, product changes, live Notion data or releases.
-
-## Independent Desktop export column expectations
-
-Removed the envelope test's call to the production column selector. Keep explicit
-block, collection and comment column expectations in the existing fixture. Add
-a distinct signed property URL so format sanitization cannot mask skipped
-collection-schema sanitization through the exporter's second text pass. Preserve
-ordinary properties, numeric precision, wrapper paths and source immutability.
-
-Before/after full text-package race comparisons show healthy behavior passing
-and the previously missed schema omission failing after repair. Existing block
-property and comment-content omission controls remain detected. Disposable Go
-overlays never write production files. Validate full Go/static gates, isolated
-CLI smoke, independent review and cross-platform CI. No new test function,
-production behavior, live Notion data or releases.
-
-## Shared invalid-snapshot import fixture
-
-Consolidated three repeated source/publish/destination fixtures into one table;
-removed 61 test lines. Keep missing-table, row-count and outside-target symlink
-rejections. Add an inside-target symlink case to isolate the explicit symlink
-guard from path containment. Check the intended error and complete destination
-page records, rather than accepting any error and checking only one page ID.
-The existing source-store helper owns cleanup; no new helper or production change.
-
-Before/after full share-package race comparisons expose the old symlink-guard
-false green while retaining required-table and row-count omission controls.
-Reuse the baseline only after matching source/test trees, dependencies and runtime.
-Disposable Go overlays never write production files. Validate full Go/static
-gates, isolated CLI smoke, independent review and cross-platform CI. Synthetic
-archives only; no live Notion data or releases.
-
-## Markdown fixture and assertion cleanup
-
-Consolidated two schema-less property archive fixtures into one two-case table,
-preserving every input and expected property. Removed the duplicate stateless
-render in each to-do case. The four test files are 19 lines shorter overall.
-
-Replace the table fallback's any-backslash check with exact output for all five
-existing inputs. Extend the existing code whitespace table with embedded runs
-of three and four backticks and independent expected fences. Whole-package
-race comparisons show the old suite accepting lost literal hash content and
-fixed short code fences; repaired assertions reject both. Property-loss and
-cell-escaping controls remain detected. Reuse baseline comparisons only after
-matching source/test trees, module inputs and runtime. Temporary Go overlays
-never write production files. Validate full Go/static gates, isolated CLI smoke,
-independent review and cross-platform CI. No live Notion data or releases.
-
-## Desktop cache fixture cleanup
-
-Shared the identical primary-key block-cache setup in two ingestion tests;
-that test file is ten lines shorter. Preserve each scenario and its assertions,
-and keep the distinct empty-cache block and comment schemas separate.
-
-Correct the two collection names in the synthetic workspace fixture to Desktop
-rich-text JSON and compare both archived names explicitly. The old fixture
-silently produced collection IDs; adding the name assertion exposes that loss.
-Eight before/after full Desktop-package race comparisons show the old suite
-accepting dropped names and the repaired suite rejecting them. Child-title and
-workspace-scope controls remain detected. Reuse baseline runs only after matching
-source/test trees, module inputs and runtime. Temporary Go overlays never write
-production files. Validate full Go/static gates, isolated CLI smoke, independent
-review and cross-platform CI. No live Notion data or releases.
-
-## Search ranking precedence
-
-Extended the existing two-page SQLite ranking fixture with an older page whose
-title also matches the query. Compare all three result IDs in order: higher
-relevance first, then recency for the original equal-rank pair. No new test,
-helper, production mapping or archive fixture.
-
-Full store-package race comparisons expose the old suite accepting recency
-before relevance; the repaired assertion rejects it. Reversed equal-rank recency
-remains detected. Reuse baseline runs only after matching store/text trees,
-module inputs and runtime. Temporary Go overlays never write production files.
-Validate full Go/static gates, isolated CLI smoke, independent review and
-cross-platform CI. Synthetic temporary data only; no live Notion data or releases.
-
-## Synthetic Desktop CLI progress fixture
-
-Replace the progress test's missing config and implicit host Desktop cache with
-the existing synthetic workspace SQL fixture. Keep config, source, snapshot cache
-and archive paths temporary; disable update checks. Preserve all progress fields
-and require fixture-specific CLI counts, a persisted searchable page and unchanged
-source database bytes. No new test, helper or SQL fixture.
-
-Eight full CLI-package race comparisons use isolated temporary home/config/cache
-paths. The old test fails when a disposable overlay poisons the default Desktop
-path, but passes when Desktop ingestion is skipped entirely. The repaired fixture
-ignores the poisoned default and rejects skipped ingestion. The progress-discard
-control remains detected. Reuse the baseline only after matching relevant trees,
-store production, module inputs and runtime. Temporary overlays never write
-production files. Validate full Go/static gates, isolated built-CLI smoke,
-independent review and cross-platform CI. No live Notion data or releases.
-
-## API table mapping assertions
-
-Replace the conditional row-text check in the existing HTTP-to-SQLite table
-fixture with exact expected table and row IDs, types, parents, page IDs and text.
-Require both records and retain the real full-text search assertion. No new test,
-helper, fixture or production change.
-
-Full API-package race comparisons show the old suite accepts a table row stored
-as a paragraph; the repaired assertion rejects it. Wrong row text remains
-detected. Reuse baseline comparisons only after matching API/text trees, store
-production, module inputs and runtime. Temporary Go overlays never write
-production files. Validate Go/static gates, isolated CLI smoke, independent
-review and cross-platform CI. Synthetic data only; no live Notion data or releases.
-
-## Complete database export index records
-
-Replace partial name/filename checks in the existing export-all CLI fixture
-with complete expected index rows: ID, escaped name, source, row count, column
-count and filename. Keep header/count validation, generated file checks and
-the actual CLI summary. No new test, helper, fixture or production change.
-
-Full CLI-package race comparisons show the old suite accepts a wrong index
-source and fabricated row/column counts; complete-row assertions reject both.
-Wrong filenames remain detected. Reuse baseline runs only after matching CLI
-tests, all Go production, module inputs and runtime. Temporary Go overlays do
-not write production files. Validate full Go/static gates, isolated CLI smoke,
-independent review and cross-platform CI. Synthetic data only; no releases.
-
-## Independent comment retry fixtures
-
-Consolidate duplicated gateway and Cloudflare HTTP/SQLite setup into one
-three-case table. Separate 502 status retries from the explicit JSON retry flag
-(on status 500); retain the 524 HTML error followed by an empty result. Preserve
-the populated comment payload, exact two-attempt checks and stored text. Also
-verify the empty response leaves no archived comments. No production change.
-
-Before/after full API-package race comparisons expose two old false greens:
-disabling either the 502 status rule or the JSON retry flag passed the original
-suite. Independent cases reject both. Disabling 524 retry remains detected.
-Reuse baseline runs only after matching API tests, all Go production, modules
-and runtime. Temporary Go overlays never write production files. Validate full
-Go/static gates, isolated CLI smoke, independent review and cross-platform CI.
-Synthetic temporary stores and local HTTP only; no live Notion data or releases.
+These are synthetic unit/integration and built-CLI checks. They do not establish
+live Notion API, installed Desktop, authenticated connector or interactive
+terminal E2E coverage. No live archives, credentials, releases or deployments
+are part of this pass.
