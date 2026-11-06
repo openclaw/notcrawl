@@ -107,3 +107,16 @@ detection of wrong page sources, missing properties/body and wrong tool
 precedence. Temporary overlays leave all three production files unchanged.
 Require local Go/static/smoke checks, independent review and platform/packaging
 CI. Synthetic fixtures only; no live Notion data, product changes or releases.
+
+## Complete report time-window assertions
+
+Keep the existing two-age SQLite fixture and compare all three report windows,
+including labels, latest-edit-anchored cutoffs, edited-page counts, active
+collections and comments. Replace the length/first-window-only assertion.
+
+Ten before/after report-package race suites retain count-error detection and
+now reject wrong duration, label and anchor faults accepted by the old test.
+Reuse the earlier baseline only after matching source/test bytes, module files,
+store tree and runtime. Temporary overlays never modify production files.
+Validate local Go/static/smoke checks, independent review and platform/packaging
+CI. No new fixtures, product changes, live Notion data or releases.

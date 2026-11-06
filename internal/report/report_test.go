@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -52,8 +53,14 @@ func TestBuildReport(t *testing.T) {
 	if report.LatestEditedAt == nil || !report.LatestEditedAt.Equal(time.UnixMilli(latest).UTC()) {
 		t.Fatalf("unexpected latest edit: %s", report.LatestEditedAt)
 	}
-	if len(report.Windows) != 3 || report.Windows[0].EditedPages != 1 || report.Windows[0].Comments != 1 {
-		t.Fatalf("unexpected windows: %+v", report.Windows)
+	anchor := time.UnixMilli(latest).UTC()
+	wantWindows := []WindowStats{
+		{Label: "24 hours", Since: anchor.Add(-24 * time.Hour), EditedPages: 1, ActiveCollections: 1, Comments: 1},
+		{Label: "7 days", Since: anchor.Add(-7 * 24 * time.Hour), EditedPages: 2, ActiveCollections: 1, Comments: 1},
+		{Label: "30 days", Since: anchor.Add(-30 * 24 * time.Hour), EditedPages: 2, ActiveCollections: 1, Comments: 1},
+	}
+	if !reflect.DeepEqual(report.Windows, wantWindows) {
+		t.Fatalf("windows = %+v, want %+v", report.Windows, wantWindows)
 	}
 	if len(report.TopCollections) == 0 || report.TopCollections[0].Name != "Roadmap" {
 		t.Fatalf("unexpected top collections: %+v", report.TopCollections)
