@@ -242,3 +242,19 @@ Wrong filenames remain detected. Reuse baseline runs only after matching CLI
 tests, all Go production, module inputs and runtime. Temporary Go overlays do
 not write production files. Validate full Go/static gates, isolated CLI smoke,
 independent review and cross-platform CI. Synthetic data only; no releases.
+
+## Independent comment retry fixtures
+
+Consolidate duplicated gateway and Cloudflare HTTP/SQLite setup into one
+three-case table. Separate 502 status retries from the explicit JSON retry flag
+(on status 500); retain the 524 HTML error followed by an empty result. Preserve
+the populated comment payload, exact two-attempt checks and stored text. Also
+verify the empty response leaves no archived comments. No production change.
+
+Before/after full API-package race comparisons expose two old false greens:
+disabling either the 502 status rule or the JSON retry flag passed the original
+suite. Independent cases reject both. Disabling 524 retry remains detected.
+Reuse baseline runs only after matching API tests, all Go production, modules
+and runtime. Temporary Go overlays never write production files. Validate full
+Go/static gates, isolated CLI smoke, independent review and cross-platform CI.
+Synthetic temporary stores and local HTTP only; no live Notion data or releases.

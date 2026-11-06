@@ -976,87 +976,53 @@ func TestDoAcceptsSuccessBodyAtLimit(t *testing.T) {
 	}
 }
 
-func TestIngestCommentsRetriesTransientGatewayError(t *testing.T) {
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path != "/comments" {
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
-			http.Error(w, "invalid test request", http.StatusBadRequest)
-			return
-		}
-		attempts++
-		if attempts == 1 {
-			w.WriteHeader(http.StatusBadGateway)
-			_, _ = w.Write([]byte(`{"retryable":true,"retry_after":0}`))
-			return
-		}
-		_, _ = w.Write([]byte(`{
-			"object":"list",
-			"results":[{
-				"id":"comment1",
-				"rich_text":[{"type":"text","plain_text":"Looks good","text":{"content":"Looks good"}}],
-				"created_by":{"id":"user1"},
-				"created_time":"2026-01-01T00:00:00Z",
-				"last_edited_time":"2026-01-01T00:00:00Z"
-			}],
-			"has_more":false
-		}`))
-	}))
-	defer server.Close()
-
-	st := openTestStore(t)
-	defer st.Close()
-
-	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).ingestComments(context.Background(), st, "page1", "space1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 || attempts != 2 {
-		t.Fatalf("unexpected count/attempts: count=%d attempts=%d", count, attempts)
-	}
-	comments, err := st.PageComments(context.Background(), "page1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(comments) != 1 || comments[0].Text != "Looks good" {
-		t.Fatalf("unexpected comments: %+v", comments)
-	}
-}
-
-func TestIngestCommentsRetriesCloudflareTimeout(t *testing.T) {
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		if r.URL.Path != "/comments" {
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
-			http.Error(w, "invalid test request", http.StatusBadRequest)
-			return
-		}
-		attempts++
-		if attempts == 1 {
-			w.WriteHeader(524)
-			_, _ = w.Write([]byte(`<!DOCTYPE html><title>Notion</title>`))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"object":"list",
-			"results":[],
-			"has_more":false
-		}`))
-	}))
-	defer server.Close()
-
-	st := openTestStore(t)
-	defer st.Close()
-
-	count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: http.DefaultClient}).ingestComments(context.Background(), st, "page1", "space1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 || attempts != 2 {
-		t.Fatalf("unexpected count/attempts: count=%d attempts=%d", count, attempts)
+func TestIngestCommentsRetriesTransientErrors(t *testing.T) {
+	populated := `{"object":"list","results":[{"id":"comment1","rich_text":[{"type":"text","plain_text":"Looks good","text":{"content":"Looks good"}}],"created_by":{"id":"user1"},"created_time":"2026-01-01T00:00:00Z","last_edited_time":"2026-01-01T00:00:00Z"}],"has_more":false}`
+	for _, tc := range []struct {
+		name, contentType, errorBody, result string
+		status, count                        int
+	}{
+		{"gateway status", "application/json", `{"retryable":false,"retry_after":0}`, populated, http.StatusBadGateway, 1},
+		{"explicit retry flag", "application/json", `{"retryable":true,"retry_after":0}`, populated, http.StatusInternalServerError, 1},
+		{"Cloudflare HTML", "text/html", `<!DOCTYPE html><title>Notion</title>`, `{"object":"list","results":[],"has_more":false}`, 524, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attempts := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/comments" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.String())
+					http.Error(w, "invalid test request", http.StatusBadRequest)
+					return
+				}
+				attempts++
+				if attempts == 1 {
+					w.Header().Set("Content-Type", tc.contentType)
+					w.WriteHeader(tc.status)
+					_, _ = io.WriteString(w, tc.errorBody)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, tc.result)
+			}))
+			defer server.Close()
+			st := openTestStore(t)
+			defer st.Close()
+			ctx := context.Background()
+			count, err := (Client{BaseURL: server.URL, Version: "2026-03-11", Token: "secret", HTTP: server.Client()}).ingestComments(ctx, st, "page1", "space1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count != tc.count || attempts != 2 {
+				t.Fatalf("unexpected count/attempts: count=%d attempts=%d", count, attempts)
+			}
+			comments, err := st.PageComments(ctx, "page1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(comments) != tc.count || (tc.count == 1 && comments[0].Text != "Looks good") {
+				t.Fatalf("unexpected comments: %+v", comments)
+			}
+		})
 	}
 }
 
