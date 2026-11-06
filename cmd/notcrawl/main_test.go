@@ -514,11 +514,45 @@ func TestShareImportHelpDocumentsRetentionModes(t *testing.T) {
 }
 
 func TestSyncEmitsProgressPercentToStderr(t *testing.T) {
+	ctx := context.Background()
 	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "desktop.db")
+	source, err := sql.Open("sqlite", sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	fixture, err := os.ReadFile("../../internal/notiondesktop/testdata/workspaces.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := source.Exec(string(fixture)); err != nil {
+		t.Fatal(err)
+	}
+	if err := source.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := filepath.Join(dir, "cache")
+	configPath := filepath.Join(dir, "config.toml")
+	configBody := fmt.Sprintf(`cache_dir = %q
+[notion.desktop]
+path = %q
+`, cacheDir, sourcePath)
+	if err := os.WriteFile(configPath, []byte(configBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CRAWLKIT_NO_UPDATE_CHECK", "1")
+	t.Setenv("NOTCRAWL_NO_UPDATE_CHECK", "1")
+	dbPath := filepath.Join(dir, "notcrawl.db")
 	var stdout, stderr bytes.Buffer
-	err := run(context.Background(), []string{
-		"--config", filepath.Join(dir, "missing.toml"),
-		"--db", filepath.Join(dir, "notcrawl.db"),
+	err = run(ctx, []string{
+		"--config", configPath,
+		"--db", dbPath,
 		"sync", "--source", "desktop",
 	}, &stdout, &stderr)
 	if err != nil {
@@ -529,6 +563,26 @@ func TestSyncEmitsProgressPercentToStderr(t *testing.T) {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("missing %q in progress logs:\n%s", want, logs)
 		}
+	}
+	wantSummary := "desktop: pages=3 blocks=5 teams=2 collections=2 comments=3 snapshot=" + filepath.Join(cacheDir, "notion-desktop-")
+	if !strings.Contains(stdout.String(), wantSummary) {
+		t.Fatalf("unexpected desktop summary: %s", stdout.String())
+	}
+	st, err := store.OpenReadOnly(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	results, err := st.Search(ctx, `"Selected body"`, 10)
+	if err != nil || len(results) != 1 || results[0].Kind != "page" || results[0].ID != "page-a" {
+		t.Fatalf("expected synthetic Desktop page in search: %#v, %v", results, err)
+	}
+	after, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("Desktop sync mutated the source cache")
 	}
 }
 
