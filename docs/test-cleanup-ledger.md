@@ -79,3 +79,17 @@ repaired test under the race detector. Healthy metadata passes both versions.
 Keep the existing fixture, command lists and positive JSON checks unchanged.
 Validate full CLI race tests, `make check`, built-CLI metadata, review and platform
 CI. No production changes, live Notion data, credentials or releases.
+
+## Gateway cancellation boundary
+
+Replace the cancellation case's loopback server and 25 ms deadline with a
+controlled transport returning the same 429 and 60-second retry delay. Cancel
+at that response, require the cancellation cause, and count transport calls
+so an extra request cannot hide behind a cancelled network context. Keep the
+real-server success/retry-limit cases and delay-bound table.
+
+Six before/after full MCP-package race suites: healthy cases pass, skipped
+backoff remains detected, and a fabricated deadline error accepted by the old
+case now fails. Temporary Go overlays leave production bytes unchanged.
+Validate local Go/static/smoke checks, independent review and platform CI with
+credential-free packaging. No live Notion data or releases.

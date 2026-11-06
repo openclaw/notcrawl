@@ -63,20 +63,35 @@ func TestGatewayRetryIsBounded(t *testing.T) {
 }
 
 func TestGatewayRetryCancellation(t *testing.T) {
-	attempts := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		w.Header().Set("Retry-After", "60")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer server.Close()
-	gateway := &gatewayClient{http: server.Client(), baseURL: server.URL}
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	attempts := 0
+	gateway := &gatewayClient{
+		baseURL: "https://gateway.example.invalid",
+		http: &http.Client{Transport: gatewayRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts > 1 {
+				return nil, r.Context().Err()
+			}
+			cancel()
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Header:     http.Header{"Retry-After": []string{"60"}},
+				Body:       http.NoBody,
+				Request:    r,
+			}, nil
+		})},
+	}
 	err := gateway.rpcCall(ctx, "tools/call", nil, nil)
-	if !errors.Is(err, context.DeadlineExceeded) || attempts != 1 {
+	if !errors.Is(err, context.Canceled) || attempts != 1 {
 		t.Fatalf("attempts=%d err=%v", attempts, err)
 	}
+}
+
+type gatewayRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f gatewayRoundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
 func TestRetryDelayBounds(t *testing.T) {
