@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/openclaw/notcrawl/internal/store"
@@ -58,6 +59,19 @@ func TestIngestWorkspaceScope(t *testing.T) {
 	}
 	if summary.Pages != 3 || summary.Blocks != 5 || summary.Comments != 3 {
 		t.Fatalf("unexpected unscoped ingestion: %+v", summary)
+	}
+
+	collections, err := st.Collections(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]string{}
+	for _, collection := range collections {
+		names[collection.ID] = collection.Name
+	}
+	wantNames := map[string]string{"collection-a": "Selected database", "collection-b": "Excluded database"}
+	if !reflect.DeepEqual(names, wantNames) {
+		t.Fatalf("collection names = %#v; want %#v", names, wantNames)
 	}
 
 	// Narrowing coverage must not apply an excluded workspace's tombstones.

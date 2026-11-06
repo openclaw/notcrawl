@@ -167,3 +167,19 @@ cell-escaping controls remain detected. Reuse baseline comparisons only after
 matching source/test trees, module inputs and runtime. Temporary Go overlays
 never write production files. Validate full Go/static gates, isolated CLI smoke,
 independent review and cross-platform CI. No live Notion data or releases.
+
+## Desktop cache fixture cleanup
+
+Shared the identical primary-key block-cache setup in two ingestion tests;
+that test file is ten lines shorter. Preserve each scenario and its assertions,
+and keep the distinct empty-cache block and comment schemas separate.
+
+Correct the two collection names in the synthetic workspace fixture to Desktop
+rich-text JSON and compare both archived names explicitly. The old fixture
+silently produced collection IDs; adding the name assertion exposes that loss.
+Eight before/after full Desktop-package race comparisons show the old suite
+accepting dropped names and the repaired suite rejecting them. Child-title and
+workspace-scope controls remain detected. Reuse baseline runs only after matching
+source/test trees, module inputs and runtime. Temporary Go overlays never write
+production files. Validate full Go/static gates, isolated CLI smoke, independent
+review and cross-platform CI. No live Notion data or releases.

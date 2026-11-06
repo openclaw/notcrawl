@@ -64,27 +64,7 @@ func TestPruneDesktopSnapshotsKeepsNewestAndSidecars(t *testing.T) {
 
 func TestIngestBlocksDerivesUntitledPageFromChildText(t *testing.T) {
 	ctx := context.Background()
-	src, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "desktop.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer src.Close()
-	if _, err := src.ExecContext(ctx, `create table block (
-		id text primary key,
-		space_id text,
-		type text,
-		properties text,
-		content text,
-		collection_id text,
-		created_time integer,
-		last_edited_time integer,
-		parent_id text,
-		parent_table text,
-		alive integer,
-		format text
-	)`); err != nil {
-		t.Fatal(err)
-	}
+	src := openBlockCacheForTest(t)
 	if _, err := src.ExecContext(ctx, `insert into block(id, space_id, type, properties, content, collection_id, created_time, last_edited_time, parent_id, parent_table, alive, format)
 		values
 		('page1', 'space1', 'page', '{}', '', '', 1, 1, '', '', 1, ''),
@@ -125,27 +105,7 @@ func TestIngestBlocksDerivesUntitledPageFromChildText(t *testing.T) {
 
 func TestIngestBlocksPreservesRowsMissingFromLatestSnapshot(t *testing.T) {
 	ctx := context.Background()
-	src, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "desktop.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer src.Close()
-	if _, err := src.ExecContext(ctx, `create table block (
-		id text primary key,
-		space_id text,
-		type text,
-		properties text,
-		content text,
-		collection_id text,
-		created_time integer,
-		last_edited_time integer,
-		parent_id text,
-		parent_table text,
-		alive integer,
-		format text
-	)`); err != nil {
-		t.Fatal(err)
-	}
+	src := openBlockCacheForTest(t)
 	if _, err := src.ExecContext(ctx, `insert into block(id, space_id, type, properties, content, collection_id, created_time, last_edited_time, parent_id, parent_table, alive, format)
 		values
 		('page1', 'space1', 'page', '{"title":[["Plan"]]}', '["child1"]', '', 1, 1, '', '', 1, ''),
@@ -336,4 +296,34 @@ func TestIngestCommentsTreatsEmptyCacheAsNonAuthoritative(t *testing.T) {
 	if len(comments) != 1 || comments[0].Text != "Keep me" {
 		t.Fatalf("empty comment cache altered previous snapshot: %#v", comments)
 	}
+}
+
+func openBlockCacheForTest(t *testing.T) *sql.DB {
+	t.Helper()
+	src, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "desktop.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := src.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if _, err := src.ExecContext(context.Background(), `create table block (
+		id text primary key,
+		space_id text,
+		type text,
+		properties text,
+		content text,
+		collection_id text,
+		created_time integer,
+		last_edited_time integer,
+		parent_id text,
+		parent_table text,
+		alive integer,
+		format text
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	return src
 }
