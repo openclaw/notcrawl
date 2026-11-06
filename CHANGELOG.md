@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.6.11 - 2026-11-06
+## 0.6.12 - 2026-11-06
 
-**Highlights:** Retry transient targeted-repair failures and preserve literal SQLite paths.
+**Highlights:** Preserve literal SQLite paths when opening archives, taking snapshots, and checking freshness.
 
 - Update CrawlKit to v0.17.4 to preserve literal SQLite paths when opening archives, taking snapshots, and checking freshness; reject ambiguous Windows paths.
 
