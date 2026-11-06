@@ -14,8 +14,8 @@ insert into team values
 ('team-a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '', '', 'Selected team', '', '[]', '{}', 0),
 ('team-b', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '', '', 'Excluded team', '', '[]', '{}', 0);
 insert into collection values
-('collection-a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '', '', 'Selected database', '{}', '{}', 1),
-('collection-b', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '', '', 'Excluded database', '{}', '{}', 1);
+('collection-a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '', '', '[["Selected database"]]', '{}', '{}', 1),
+('collection-b', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '', '', '[["Excluded database"]]', '{}', '{}', 1);
 insert into block values
 ('page-a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'page', '{"title":[["Selected page"]]}', '["block-a"]', '', 1, 1, '', '', 1, '{}'),
 ('block-a', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'text', '{"title":[["Selected body"]]}', '[]', '', 1, 1, 'page-a', 'block', 1, '{}'),
