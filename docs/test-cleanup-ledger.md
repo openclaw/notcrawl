@@ -183,3 +183,17 @@ workspace-scope controls remain detected. Reuse baseline runs only after matchin
 source/test trees, module inputs and runtime. Temporary Go overlays never write
 production files. Validate full Go/static gates, isolated CLI smoke, independent
 review and cross-platform CI. No live Notion data or releases.
+
+## Search ranking precedence
+
+Extended the existing two-page SQLite ranking fixture with an older page whose
+title also matches the query. Compare all three result IDs in order: higher
+relevance first, then recency for the original equal-rank pair. No new test,
+helper, production mapping or archive fixture.
+
+Full store-package race comparisons expose the old suite accepting recency
+before relevance; the repaired assertion rejects it. Reversed equal-rank recency
+remains detected. Reuse baseline runs only after matching store/text trees,
+module inputs and runtime. Temporary Go overlays never write production files.
+Validate full Go/static gates, isolated CLI smoke, independent review and
+cross-platform CI. Synthetic temporary data only; no live Notion data or releases.

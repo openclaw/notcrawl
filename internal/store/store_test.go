@@ -459,6 +459,7 @@ func TestStoreSearchRanksByRelevanceThenRecency(t *testing.T) {
 	pages := []Page{
 		{ID: "old", Title: "Old", LastEditedTime: now - 1000, Alive: true, Source: "test", SyncedAt: now},
 		{ID: "new", Title: "New", LastEditedTime: now, Alive: true, Source: "test", SyncedAt: now},
+		{ID: "relevant", Title: "Needle", LastEditedTime: now - 2000, Alive: true, Source: "test", SyncedAt: now},
 	}
 	for _, page := range pages {
 		if err := st.UpsertPage(ctx, page); err != nil {
@@ -473,8 +474,8 @@ func TestStoreSearchRanksByRelevanceThenRecency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(results) < 2 || results[0].ID != "new" || results[1].ID != "old" {
-		t.Fatalf("expected newer equal-rank page first, got %+v", results)
+	if len(results) != 3 || results[0].ID != "relevant" || results[1].ID != "new" || results[2].ID != "old" {
+		t.Fatalf("expected relevance before recency and newer equal-rank page first, got %+v", results)
 	}
 }
 
