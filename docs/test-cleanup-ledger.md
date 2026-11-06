@@ -93,3 +93,17 @@ backoff remains detected, and a fabricated deadline error accepted by the old
 case now fails. Temporary Go overlays leave production bytes unchanged.
 Validate local Go/static/smoke checks, independent review and platform CI with
 credential-free packaging. No live Notion data or releases.
+
+## Targeted MCP query fixture consolidation
+
+Fold the standalone query-discovery setup into the connector-selection matrix.
+Preserve the default tool list (including its legacy distractor), all three
+explicit name pairs, both tool orders and the same query/limit: seven cases.
+Share summary/query/page identity/source/properties/body assertions across all
+cases. Remove duplicated setup; the test file is fifteen lines shorter.
+
+Ten before/after full MCP-package race suites retain healthy success and
+detection of wrong page sources, missing properties/body and wrong tool
+precedence. Temporary overlays leave all three production files unchanged.
+Require local Go/static/smoke checks, independent review and platform/packaging
+CI. Synthetic fixtures only; no live Notion data, product changes or releases.

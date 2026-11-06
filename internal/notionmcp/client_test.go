@@ -42,34 +42,60 @@ func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
 		{Name: "notion_notion-search-agents", Meta: meta},
 		{Name: "notion_notion-get-file-download-urls", Title: "Fetch download URLs", Meta: meta},
 	}
+	type queryCase struct {
+		name  string
+		tools []toolDefinition
+	}
+	cases := []queryCase{{name: "default tools"}}
 	for _, names := range [][2]string{{"fetch", "search"}, {"notion_fetch", "notion_search"}, {"notion_notion-fetch", "notion_notion-search"}} {
 		for _, exactFirst := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s/exact-first=%t", names[0], exactFirst), func(t *testing.T) {
-				pageTools := []toolDefinition{{Name: names[0], Meta: meta}, {Name: names[1], Meta: meta}}
-				tools := append(append([]toolDefinition{}, variants...), pageTools...)
-				if exactFirst {
-					tools = append(append([]toolDefinition{}, pageTools...), variants...)
-				}
-				fixture := &gatewayFixture{tools: tools}
-				server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-				defer server.Close()
-				st := openTestStore(t)
-				defer st.Close()
-				summary, err := (Client{
-					BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
-				}).Sync(context.Background(), st, SyncOptions{Queries: []string{"launch plan"}, Limit: 1})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if summary.Pages != 1 || fixture.searchQuery != "launch plan" {
-					t.Fatalf("sync summary=%+v query=%q", summary, fixture.searchQuery)
-				}
-				blocks, err := st.PageBlocks(context.Background(), "55555555-5555-5555-5555-555555555555")
-				if err != nil || len(blocks) != 1 || !strings.Contains(blocks[0].Text, "Connector body") {
-					t.Fatalf("page content=%+v error=%v", blocks, err)
-				}
-			})
+			pageTools := []toolDefinition{{Name: names[0], Meta: meta}, {Name: names[1], Meta: meta}}
+			tools := append(append([]toolDefinition{}, variants...), pageTools...)
+			if exactFirst {
+				tools = append(append([]toolDefinition{}, pageTools...), variants...)
+			}
+			cases = append(cases, queryCase{fmt.Sprintf("%s/exact-first=%t", names[0], exactFirst), tools})
 		}
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			fixture := &gatewayFixture{tools: tc.tools}
+			server := httptest.NewServer(http.HandlerFunc(fixture.serve))
+			defer server.Close()
+			st := openTestStore(t)
+			defer st.Close()
+			summary, err := (Client{
+				BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
+			}).Sync(ctx, st, SyncOptions{Queries: []string{"launch plan"}, Limit: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if summary.Candidates != 1 || summary.Pages != 1 {
+				t.Fatalf("unexpected summary: %+v", summary)
+			}
+			fixture.mu.Lock()
+			query := fixture.searchQuery
+			fixture.mu.Unlock()
+			if query != "launch plan" {
+				t.Fatalf("query = %q", query)
+			}
+			pages, err := st.Pages(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(pages) != 1 || pages[0].ID != "55555555-5555-5555-5555-555555555555" || pages[0].Source != store.SourceNotionMCP {
+				t.Fatalf("unexpected pages: %#v", pages)
+			}
+			blocks, err := st.PageBlocks(ctx, pages[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(blocks) != 1 || !strings.Contains(blocks[0].Text, "Connector body") ||
+				!strings.Contains(blocks[0].Text, "## Properties") || !strings.Contains(blocks[0].Text, `"Status":"In progress"`) {
+				t.Fatalf("connector content was not preserved: %#v", blocks)
+			}
+		})
 	}
 }
 
@@ -416,47 +442,6 @@ func TestSyncRepairsIncompleteAPIBodyUntilAPISyncCompletes(t *testing.T) {
 	}
 	if synced {
 		t.Fatal("completed API page kept MCP sync state")
-	}
-}
-
-func TestSyncTargetedQueryDiscoversPage(t *testing.T) {
-	ctx := context.Background()
-	st := openTestStore(t)
-	defer st.Close()
-	fixture := &gatewayFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	defer server.Close()
-	summary, err := (Client{
-		BaseURL:            server.URL,
-		AuthPath:           writeAuthFile(t),
-		ConnectorID:        testConnectorID,
-		AllowUnsafeBaseURL: true,
-	}).Sync(ctx, st, SyncOptions{Queries: []string{"launch plan"}, Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.Candidates != 1 || summary.Pages != 1 {
-		t.Fatalf("unexpected summary: %+v", summary)
-	}
-	fixture.mu.Lock()
-	query := fixture.searchQuery
-	fixture.mu.Unlock()
-	if query != "launch plan" {
-		t.Fatalf("query = %q", query)
-	}
-	pages, err := st.Pages(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pages) != 1 || pages[0].ID != "55555555-5555-5555-5555-555555555555" || pages[0].Source != store.SourceNotionMCP {
-		t.Fatalf("unexpected pages: %#v", pages)
-	}
-	blocks, err := st.PageBlocks(ctx, pages[0].ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(blocks) != 1 || !strings.Contains(blocks[0].Text, "## Properties") || !strings.Contains(blocks[0].Text, `"Status":"In progress"`) {
-		t.Fatalf("connector properties were not preserved: %#v", blocks)
 	}
 }
 
