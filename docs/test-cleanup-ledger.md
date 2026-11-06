@@ -135,3 +135,19 @@ property and comment-content omission controls remain detected. Disposable Go
 overlays never write production files. Validate full Go/static gates, isolated
 CLI smoke, independent review and cross-platform CI. No new test function,
 production behavior, live Notion data or releases.
+
+## Shared invalid-snapshot import fixture
+
+Consolidated three repeated source/publish/destination fixtures into one table;
+removed 61 test lines. Keep missing-table, row-count and outside-target symlink
+rejections. Add an inside-target symlink case to isolate the explicit symlink
+guard from path containment. Check the intended error and complete destination
+page records, rather than accepting any error and checking only one page ID.
+The existing source-store helper owns cleanup; no new helper or production change.
+
+Before/after full share-package race comparisons expose the old symlink-guard
+false green while retaining required-table and row-count omission controls.
+Reuse the baseline only after matching source/test trees, dependencies and runtime.
+Disposable Go overlays never write production files. Validate full Go/static
+gates, isolated CLI smoke, independent review and cross-platform CI. Synthetic
+archives only; no live Notion data or releases.

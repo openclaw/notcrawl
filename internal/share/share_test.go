@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -457,159 +458,97 @@ func TestImportMergePreservesHigherPriorityLocalPayloadAndRemoteFallback(t *test
 	}
 }
 
-func TestImportRejectsIncompleteManifestBeforeClearingDestination(t *testing.T) {
-	ctx := context.Background()
-	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
-	defer src.Close()
-	repo := t.TempDir()
-	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
-		t.Fatal(err)
-	}
-	manifestPath := filepath.Join(repo, "manifest.json")
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	var tables []TableManifest
-	for _, table := range manifest.Tables {
-		if table.Name != "pages" {
-			tables = append(tables, table)
-		}
-	}
-	manifest.Tables = tables
-	data, err = json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestImportRejectsInvalidSnapshotsWithoutChangingDestination(t *testing.T) {
+	for _, tc := range []struct {
+		name, wantError string
+	}{
+		{"missing table", `snapshot manifest missing required table "pages"`},
+		{"row count", "snapshot table pages row count mismatch:"},
+		{"symlink inside", "snapshot table pages: symlink snapshot path is not allowed:"},
+		{"symlink outside", "snapshot table pages: symlink snapshot path is not allowed:"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
+			repo := t.TempDir()
+			if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
+				t.Fatal(err)
+			}
+			manifestPath := filepath.Join(repo, "manifest.json")
+			data, err := os.ReadFile(manifestPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var manifest Manifest
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				t.Fatal(err)
+			}
+			pagesIndex := -1
+			for i, table := range manifest.Tables {
+				if table.Name == "pages" {
+					pagesIndex = i
+					break
+				}
+			}
+			if pagesIndex < 0 {
+				t.Fatal("pages table missing from manifest")
+			}
+			switch tc.name {
+			case "missing table":
+				manifest.Tables = append(manifest.Tables[:pagesIndex], manifest.Tables[pagesIndex+1:]...)
+			case "row count":
+				manifest.Tables[pagesIndex].Rows++
+			default:
+				pagesPath := filepath.Join(repo, manifest.Tables[pagesIndex].Path)
+				data, err := os.ReadFile(pagesPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target := filepath.Join(repo, "pages-copy.jsonl.gz")
+				if tc.name == "symlink outside" {
+					target = filepath.Join(t.TempDir(), "pages.jsonl.gz")
+				}
+				if err := os.WriteFile(target, data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(pagesPath); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, pagesPath); err != nil {
+					t.Fatal(err)
+				}
+			}
+			data, err = json.MarshalIndent(manifest, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dst.Close()
-	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil {
-		t.Fatal("expected incomplete manifest rejection")
-	}
-	pages, err := dst.Pages(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pages) != 1 || pages[0].ID != "keep" {
-		t.Fatalf("incomplete import altered destination: %#v", pages)
-	}
-}
-
-func TestImportRejectsRowCountMismatchBeforeCommit(t *testing.T) {
-	ctx := context.Background()
-	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
-	defer src.Close()
-	repo := t.TempDir()
-	if _, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir}); err != nil {
-		t.Fatal(err)
-	}
-	manifestPath := filepath.Join(repo, "manifest.json")
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var manifest Manifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	for i := range manifest.Tables {
-		if manifest.Tables[i].Name == "pages" {
-			manifest.Tables[i].Rows++
-		}
-	}
-	data, err = json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(manifestPath, append(data, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dst.Close()
-	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil {
-		t.Fatal("expected row count mismatch rejection")
-	}
-	pages, err := dst.Pages(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pages) != 1 || pages[0].ID != "keep" {
-		t.Fatalf("row count mismatch altered destination: %#v", pages)
-	}
-}
-
-func TestImportRejectsSymlinkedSnapshotFile(t *testing.T) {
-	ctx := context.Background()
-	src, mdDir := snapshotStoreForTest(t, ctx, "Launch", "hello")
-	defer src.Close()
-	repo := t.TempDir()
-	summary, err := Publish(ctx, src, PublishOptions{RepoPath: repo, MarkdownDir: mdDir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var pagesPath string
-	for _, table := range summary.Manifest.Tables {
-		if table.Name == "pages" {
-			pagesPath = filepath.Join(repo, table.Path)
-			break
-		}
-	}
-	if pagesPath == "" {
-		t.Fatal("pages table missing from manifest")
-	}
-	data, err := os.ReadFile(pagesPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	outside := filepath.Join(t.TempDir(), "pages.jsonl.gz")
-	if err := os.WriteFile(outside, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(pagesPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, pagesPath); err != nil {
-		t.Fatal(err)
-	}
-
-	dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dst.Close()
-	if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil {
-		t.Fatal("expected symlinked snapshot rejection")
-	}
-	pages, err := dst.Pages(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pages) != 1 || pages[0].ID != "keep" {
-		t.Fatalf("symlinked import altered destination: %#v", pages)
+			dst, err := store.Open(filepath.Join(t.TempDir(), "dst.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer dst.Close()
+			if err := dst.UpsertPage(ctx, store.Page{ID: "keep", Title: "Keep destination", Alive: true, Source: "desktop", SyncedAt: store.NowMS()}); err != nil {
+				t.Fatal(err)
+			}
+			wantPages, err := dst.Pages(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ImportWithOptions(ctx, dst, repo, ImportOptions{}); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("import error = %v; want %q", err, tc.wantError)
+			}
+			pages, err := dst.Pages(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(pages, wantPages) {
+				t.Fatalf("failed import altered destination pages: got %#v; want %#v", pages, wantPages)
+			}
+		})
 	}
 }
 
