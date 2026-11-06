@@ -228,3 +228,17 @@ detected. Reuse baseline comparisons only after matching API/text trees, store
 production, module inputs and runtime. Temporary Go overlays never write
 production files. Validate Go/static gates, isolated CLI smoke, independent
 review and cross-platform CI. Synthetic data only; no live Notion data or releases.
+
+## Complete database export index records
+
+Replace partial name/filename checks in the existing export-all CLI fixture
+with complete expected index rows: ID, escaped name, source, row count, column
+count and filename. Keep header/count validation, generated file checks and
+the actual CLI summary. No new test, helper, fixture or production change.
+
+Full CLI-package race comparisons show the old suite accepts a wrong index
+source and fabricated row/column counts; complete-row assertions reject both.
+Wrong filenames remain detected. Reuse baseline runs only after matching CLI
+tests, all Go production, module inputs and runtime. Temporary Go overlays do
+not write production files. Validate full Go/static gates, isolated CLI smoke,
+independent review and cross-platform CI. Synthetic data only; no releases.
