@@ -150,11 +150,17 @@ func TestRenderQuotedSimpleTable(t *testing.T) {
 }
 
 func TestRenderTableFallbackEscapesBlockSyntax(t *testing.T) {
-	for _, input := range []string{"# title", "- item", "1. item", "1) item", "~~deleted~~"} {
+	for _, tc := range []struct{ input, want string }{
+		{"# title", `\# title`},
+		{"- item", `\- item`},
+		{"1. item", `1\. item`},
+		{"1) item", `1\) item`},
+		{"~~deleted~~", `\~\~deleted\~\~`},
+	} {
 		var b strings.Builder
-		renderBlocks(&b, "page", []store.Block{{ID: "row", ParentID: "page", Type: "table_row", PropertiesJSON: `{"cells":[[{"plain_text":"` + input + `"}]]}`}})
-		if !strings.Contains(b.String(), "\\") {
-			t.Errorf("unescaped fallback %q", b.String())
+		renderBlocks(&b, "page", []store.Block{{ID: "row", ParentID: "page", Type: "table_row", PropertiesJSON: `{"cells":[[{"plain_text":"` + tc.input + `"}]]}`}})
+		if want := tc.want + "\n\n"; b.String() != want {
+			t.Errorf("fallback %q rendered as %q; want %q", tc.input, b.String(), want)
 		}
 	}
 }

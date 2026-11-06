@@ -151,3 +151,19 @@ Reuse the baseline only after matching source/test trees, dependencies and runti
 Disposable Go overlays never write production files. Validate full Go/static
 gates, isolated CLI smoke, independent review and cross-platform CI. Synthetic
 archives only; no live Notion data or releases.
+
+## Markdown fixture and assertion cleanup
+
+Consolidated two schema-less property archive fixtures into one two-case table,
+preserving every input and expected property. Removed the duplicate stateless
+render in each to-do case. The four test files are 19 lines shorter overall.
+
+Replace the table fallback's any-backslash check with exact output for all five
+existing inputs. Extend the existing code whitespace table with embedded runs
+of three and four backticks and independent expected fences. Whole-package
+race comparisons show the old suite accepting lost literal hash content and
+fixed short code fences; repaired assertions reject both. Property-loss and
+cell-escaping controls remain detected. Reuse baseline comparisons only after
+matching source/test trees, module inputs and runtime. Temporary Go overlays
+never write production files. Validate full Go/static gates, isolated CLI smoke,
+independent review and cross-platform CI. No live Notion data or releases.
