@@ -214,3 +214,17 @@ control remains detected. Reuse the baseline only after matching relevant trees,
 store production, module inputs and runtime. Temporary overlays never write
 production files. Validate full Go/static gates, isolated built-CLI smoke,
 independent review and cross-platform CI. No live Notion data or releases.
+
+## API table mapping assertions
+
+Replace the conditional row-text check in the existing HTTP-to-SQLite table
+fixture with exact expected table and row IDs, types, parents, page IDs and text.
+Require both records and retain the real full-text search assertion. No new test,
+helper, fixture or production change.
+
+Full API-package race comparisons show the old suite accepts a table row stored
+as a paragraph; the repaired assertion rejects it. Wrong row text remains
+detected. Reuse baseline comparisons only after matching API/text trees, store
+production, module inputs and runtime. Temporary Go overlays never write
+production files. Validate Go/static gates, isolated CLI smoke, independent
+review and cross-platform CI. Synthetic data only; no live Notion data or releases.

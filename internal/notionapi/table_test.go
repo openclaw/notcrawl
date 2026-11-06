@@ -40,9 +40,17 @@ func TestWalkBlocksIndexesSimpleTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	want := map[string]struct{ kind, parent, text string }{
+		"table": {"table", "page", ""},
+		"row":   {"table_row", "table", "moonstone opal"},
+	}
+	if len(blocks) != len(want) {
+		t.Fatalf("table blocks = %#v; want %d blocks", blocks, len(want))
+	}
 	for _, block := range blocks {
-		if block.Type == "table_row" && block.Text != "moonstone opal" {
-			t.Errorf("table row text=%q", block.Text)
+		expected, ok := want[block.ID]
+		if !ok || block.Type != expected.kind || block.ParentID != expected.parent || block.Text != expected.text || block.PageID != "page" {
+			t.Errorf("unexpected table block: %#v", block)
 		}
 	}
 	results, err := st.Search(ctx, "moonstone", 10)
