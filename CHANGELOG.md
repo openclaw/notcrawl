@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.6.11 - 2026-11-06
+
+**Highlights:** Retry transient targeted-repair failures and preserve literal SQLite paths.
+
+- Update CrawlKit to v0.17.4 to preserve literal SQLite paths when opening archives, taking snapshots, and checking freshness; reject ambiguous Windows paths.
 
 - Retry transient Notion MCP gateway failures during targeted repair with bounded, cancelable backoff. Thanks @yashiels.
 
