@@ -197,3 +197,20 @@ remains detected. Reuse baseline runs only after matching store/text trees,
 module inputs and runtime. Temporary Go overlays never write production files.
 Validate full Go/static gates, isolated CLI smoke, independent review and
 cross-platform CI. Synthetic temporary data only; no live Notion data or releases.
+
+## Synthetic Desktop CLI progress fixture
+
+Replace the progress test's missing config and implicit host Desktop cache with
+the existing synthetic workspace SQL fixture. Keep config, source, snapshot cache
+and archive paths temporary; disable update checks. Preserve all progress fields
+and require fixture-specific CLI counts, a persisted searchable page and unchanged
+source database bytes. No new test, helper or SQL fixture.
+
+Eight full CLI-package race comparisons use isolated temporary home/config/cache
+paths. The old test fails when a disposable overlay poisons the default Desktop
+path, but passes when Desktop ingestion is skipped entirely. The repaired fixture
+ignores the poisoned default and rejects skipped ingestion. The progress-discard
+control remains detected. Reuse the baseline only after matching relevant trees,
+store production, module inputs and runtime. Temporary overlays never write
+production files. Validate full Go/static gates, isolated built-CLI smoke,
+independent review and cross-platform CI. No live Notion data or releases.
