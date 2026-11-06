@@ -2,14 +2,14 @@
 
 ## Unreleased
 
+## 0.6.11 - 2026-11-05
+
+**Highlights:** Keep targeted Notion MCP repair running through transient rate limits and gateway failures.
+
 - Retry transient Notion MCP gateway failures during targeted repair with bounded, cancelable backoff. Thanks @yashiels.
-
 - Keep snapshot CI build caches separate from validation jobs and refresh them when either release configuration, the Makefile, or the workflow changes.
-
 - Share one Linux CI worker and Go build cache across dependency, lint, and test gates to avoid repeated setup and compilation.
-
 - Keep weekly main CodeQL scans instead of repeating analysis on every main push, preserving pull-request and manual scans with independent scheduling.
-
 - Verify RPM release packages with normalized binary member paths.
 
 ## 0.6.10 - 2026-10-26
