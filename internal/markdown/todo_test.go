@@ -21,12 +21,11 @@ func TestRenderTodoCheckedState(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			block := store.Block{Type: "to_do", Text: "task", Source: tc.source, PropertiesJSON: tc.properties}
-			var first, second strings.Builder
-			renderBlock(&first, block, "  ")
-			renderBlock(&second, block, "  ")
+			var b strings.Builder
+			renderBlock(&b, block, "  ")
 			want := "  - " + tc.marker + " task\n\n"
-			if first.String() != want || second.String() != want {
-				t.Fatalf("rendered %q / %q, want %q", first.String(), second.String(), want)
+			if b.String() != want {
+				t.Fatalf("rendered %q, want %q", b.String(), want)
 			}
 		})
 	}

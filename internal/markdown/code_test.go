@@ -7,17 +7,24 @@ import (
 	"github.com/openclaw/notcrawl/internal/store"
 )
 
-func TestCodePreservesWhitespace(t *testing.T) {
-	for _, text := range []string{"  indented  \n\n", "\tline\t", "\n", ""} {
+func TestCodePreservesWhitespaceAndFences(t *testing.T) {
+	for _, tc := range []struct{ text, fence string }{
+		{"  indented  \n\n", "```"},
+		{"\tline\t", "```"},
+		{"\n", "```"},
+		{"", "```"},
+		{"```\n", "````"},
+		{"a````b\n``c", "`````"},
+	} {
 		var b strings.Builder
-		renderBlock(&b, store.Block{Type: "code", Text: text}, "")
-		want := "```text\n" + text
-		if !strings.HasSuffix(text, "\n") {
+		renderBlock(&b, store.Block{Type: "code", Text: tc.text}, "")
+		want := tc.fence + "text\n" + tc.text
+		if !strings.HasSuffix(tc.text, "\n") {
 			want += "\n"
 		}
-		want += "```\n\n"
+		want += tc.fence + "\n\n"
 		if b.String() != want {
-			t.Errorf("code %q rendered as %q; want %q", text, b.String(), want)
+			t.Errorf("code %q rendered as %q; want %q", tc.text, b.String(), want)
 		}
 	}
 }

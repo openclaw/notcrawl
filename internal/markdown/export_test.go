@@ -275,70 +275,39 @@ func TestExporterRendersDatabaseProperties(t *testing.T) {
 }
 
 func TestExporterPreservesSchemaLessProperties(t *testing.T) {
-	ctx := context.Background()
-	st := openTestStore(t)
-	defer st.Close()
-	now := store.NowMS()
-	if err := st.UpsertPage(ctx, store.Page{
-		ID:             "page1",
-		Title:          "Ship",
-		PropertiesJSON: `{"Task":[["Ship"]],"Name":[["Owner alias"]],"Title":[["Engineer"]]}`,
-		Alive:          true,
-		Source:         "desktop",
-		SyncedAt:       now,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := (Exporter{Store: st, Dir: t.TempDir()}).Export(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(s.Files[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(b)
-	if !strings.Contains(text, "- **Name:** Owner alias") {
-		t.Fatalf("schema-less Name property was dropped:\n%s", text)
-	}
-	if !strings.Contains(text, "- **Task:** Ship") {
-		t.Fatalf("ambiguous schema-less Task property was dropped:\n%s", text)
-	}
-	if !strings.Contains(text, "- **Title:** Engineer") {
-		t.Fatalf("schema-less Title property was dropped:\n%s", text)
-	}
-}
-
-func TestExporterPreservesAmbiguousSchemaLessTitleMatches(t *testing.T) {
-	ctx := context.Background()
-	st := openTestStore(t)
-	defer st.Close()
-	now := store.NowMS()
-	if err := st.UpsertPage(ctx, store.Page{
-		ID:             "page1",
-		Title:          "Ship",
-		PropertiesJSON: `{"Task":[["Ship"]],"Status":[["Ship"]]}`,
-		Alive:          true,
-		Source:         "desktop",
-		SyncedAt:       now,
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	s, err := (Exporter{Store: st, Dir: t.TempDir()}).Export(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(s.Files[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(b)
-	for _, want := range []string{"- **Status:** Ship", "- **Task:** Ship"} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("ambiguous schema-less property %q was dropped:\n%s", want, text)
-		}
+	for _, tc := range []struct {
+		name, properties string
+		want             []string
+	}{
+		{"single title match", `{"Task":[["Ship"]],"Name":[["Owner alias"]],"Title":[["Engineer"]]}`,
+			[]string{"- **Name:** Owner alias", "- **Task:** Ship", "- **Title:** Engineer"}},
+		{"multiple title matches", `{"Task":[["Ship"]],"Status":[["Ship"]]}`,
+			[]string{"- **Status:** Ship", "- **Task:** Ship"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			st := openTestStore(t)
+			defer st.Close()
+			if err := st.UpsertPage(ctx, store.Page{
+				ID: "page1", Title: "Ship", PropertiesJSON: tc.properties,
+				Alive: true, Source: "desktop", SyncedAt: store.NowMS(),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			s, err := (Exporter{Store: st, Dir: t.TempDir()}).Export(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, err := os.ReadFile(s.Files[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(string(b), want) {
+					t.Fatalf("schema-less property %q was dropped:\n%s", want, b)
+				}
+			}
+		})
 	}
 }
 
