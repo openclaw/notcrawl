@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -800,11 +801,12 @@ func TestExportDatabaseAllWritesFilesAndIndex(t *testing.T) {
 	for _, record := range records[1:] {
 		rowsByID[record[0]] = record
 	}
-	if row := rowsByID["db1"]; row[1] != "Roadmap" || row[5] != "roadmap-db1.csv" {
-		t.Fatalf("unexpected db1 index row: %#v", row)
+	want := map[string][]string{
+		"db1": {"db1", "Roadmap", "test", "1", "4", "roadmap-db1.csv"},
+		"db2": {"db2", "Launch 🚀 Plan ✅\tQ3\nReview", "test", "0", "4", "launch-plan-q3-review-db2.csv"},
 	}
-	if row := rowsByID["db2"]; row[1] != "Launch 🚀 Plan ✅\tQ3\nReview" || row[5] != "launch-plan-q3-review-db2.csv" {
-		t.Fatalf("escaped collection name did not round-trip: %#v", row)
+	if !reflect.DeepEqual(rowsByID, want) {
+		t.Fatalf("index rows = %#v; want %#v", rowsByID, want)
 	}
 }
 
