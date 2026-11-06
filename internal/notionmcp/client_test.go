@@ -34,6 +34,15 @@ func openTestStore(t *testing.T) *store.Store {
 	return st
 }
 
+func (f *gatewayFixture) client(t *testing.T) (Client, func()) {
+	t.Helper()
+	authPath := writeAuthFile(t)
+	server := httptest.NewServer(http.HandlerFunc(f.serve))
+	return Client{
+		BaseURL: server.URL, AuthPath: authPath, ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
+	}, server.Close
+}
+
 func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
 	meta := &toolMeta{ConnectorID: testConnectorID, ConnectorName: "Notion"}
 	variants := []toolDefinition{
@@ -61,13 +70,11 @@ func TestSyncSelectsPageToolsAmongConnectorVariants(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			fixture := &gatewayFixture{tools: tc.tools}
-			server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-			defer server.Close()
+			client, closeServer := fixture.client(t)
+			defer closeServer()
 			st := openTestStore(t)
 			defer st.Close()
-			summary, err := (Client{
-				BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
-			}).Sync(ctx, st, SyncOptions{Queries: []string{"launch plan"}, Limit: 1})
+			summary, err := client.Sync(ctx, st, SyncOptions{Queries: []string{"launch plan"}, Limit: 1})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -137,15 +144,9 @@ func TestSyncRepairsIncompleteDesktopPages(t *testing.T) {
 	}
 
 	fixture := &gatewayFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	defer server.Close()
-	authPath := writeAuthFile(t)
-	summary, err := (Client{
-		BaseURL:            server.URL,
-		AuthPath:           authPath,
-		ConnectorID:        testConnectorID,
-		AllowUnsafeBaseURL: true,
-	}).Sync(ctx, st, SyncOptions{Limit: 10})
+	client, closeServer := fixture.client(t)
+	defer closeServer()
+	summary, err := client.Sync(ctx, st, SyncOptions{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,11 +224,8 @@ func TestSyncReevaluatesRepairWhenDesktopSnapshotChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := &gatewayFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	defer server.Close()
-	client := Client{
-		BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
-	}
+	client, closeServer := fixture.client(t)
+	defer closeServer()
 	first, err := client.Sync(ctx, st, SyncOptions{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -311,11 +309,8 @@ func TestSyncRefetchesRepairWhenPartialDesktopSnapshotChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := &gatewayFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	defer server.Close()
-	client := Client{
-		BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
-	}
+	client, closeServer := fixture.client(t)
+	defer closeServer()
 	if _, err := client.Sync(ctx, st, SyncOptions{Limit: 10}); err != nil {
 		t.Fatal(err)
 	}
@@ -357,11 +352,8 @@ func TestSyncRetiresRepairWhenDesktopPageIsTombstoned(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := &gatewayFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	defer server.Close()
-	client := Client{
-		BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
-	}
+	client, closeServer := fixture.client(t)
+	defer closeServer()
 	if _, err := client.Sync(ctx, st, SyncOptions{Limit: 10}); err != nil {
 		t.Fatal(err)
 	}
@@ -405,11 +397,8 @@ func TestSyncRepairsIncompleteAPIBodyUntilAPISyncCompletes(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture := &gatewayFixture{}
-	server := httptest.NewServer(http.HandlerFunc(fixture.serve))
-	defer server.Close()
-	client := Client{
-		BaseURL: server.URL, AuthPath: writeAuthFile(t), ConnectorID: testConnectorID, AllowUnsafeBaseURL: true,
-	}
+	client, closeServer := fixture.client(t)
+	defer closeServer()
 	repaired, err := client.Sync(ctx, st, SyncOptions{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
