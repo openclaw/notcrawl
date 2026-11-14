@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pin modernc.org/libc to v1.80.1, matching SQLite v1.62.0's required dependency.
+
 - Build with Go 1.27.4 to fix reachable GO-2026-6859 while retaining the Go 1.27.1 minimum; refresh SQLite, terminal metadata, Go support libraries, CodeQL, and both the TruffleHog action and scanner. Thanks @dependabot! #238 #239 #240
 
 ## 0.6.12 - 2026-11-06
