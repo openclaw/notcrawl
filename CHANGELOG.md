@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Build with Go 1.27.4 to fix reachable GO-2026-6859 while retaining the Go 1.27.1 minimum; refresh SQLite, terminal metadata, Go support libraries, CodeQL, and both the TruffleHog action and scanner. Thanks @dependabot! #238 #239 #240
+
 ## 0.6.12 - 2026-11-06
 
 **Highlights:** Preserve literal SQLite paths when opening archives, taking snapshots, and checking freshness.
