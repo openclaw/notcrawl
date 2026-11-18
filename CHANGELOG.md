@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Preserve archived numeric property literals in CSV and TSV exports instead of rounding large integers and precise decimals through floating-point conversion.
+- Preserve archived numeric property literals in Markdown, CSV, and TSV exports instead of rounding large integers and precise decimals through floating-point conversion.
 
 ## 0.6.13 - 2026-11-15
 

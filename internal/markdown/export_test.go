@@ -2,6 +2,7 @@ package markdown
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,51 @@ import (
 
 	"github.com/openclaw/notcrawl/internal/store"
 )
+
+func TestExporterPreservesNumericPropertyPrecision(t *testing.T) {
+	for _, value := range []string{"9007199254740993", "-9007199254740993", "0.1234567890123456789", "1.234567890123456789e+20"} {
+		t.Run(value, func(t *testing.T) {
+			ctx := t.Context()
+			st := openTestStore(t)
+			t.Cleanup(func() { _ = st.Close() })
+			if err := st.UpsertPage(ctx, store.Page{
+				ID: "page", Title: "Example", Alive: true, Source: "api",
+				PropertiesJSON: fmt.Sprintf(`{"number":{"type":"number","number":%s},"formula":{"type":"formula","formula":{"type":"number","number":%s}},"rollup":{"type":"rollup","rollup":{"type":"number","number":%s}},"unique":{"type":"unique_id","unique_id":{"prefix":"ITEM-","number":9007199254740993}}}`, value, value, value),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			summary, err := (Exporter{Store: st, Dir: t.TempDir()}).Export(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(summary.Files) != 1 {
+				t.Fatalf("exported files = %v; want one page", summary.Files)
+			}
+			body, err := os.ReadFile(summary.Files[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{
+				"- **number:** " + value + "\n",
+				"- **formula:** " + value + "\n",
+				"- **rollup:** " + value + "\n",
+				"- **unique:** ITEM-9007199254740993\n",
+			} {
+				if !strings.Contains(string(body), want) {
+					t.Fatalf("missing %q in Markdown:\n%s", want, body)
+				}
+			}
+		})
+	}
+}
+
+func TestWritePropertiesRejectsTrailingJSON(t *testing.T) {
+	var out strings.Builder
+	page := store.Page{PropertiesJSON: `{"number":{"type":"number","number":1}} {"other":2}`}
+	if writeProperties(&out, pathResolver{}, page) || out.Len() != 0 {
+		t.Fatalf("rendered properties from trailing JSON: %q", out.String())
+	}
+}
 
 func TestExporterWritesMarkdown(t *testing.T) {
 	ctx := context.Background()
