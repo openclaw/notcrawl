@@ -3,6 +3,7 @@ package markdown
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -24,7 +25,9 @@ type propertyRow struct {
 
 func writeProperties(b *strings.Builder, paths pathResolver, page store.Page) bool {
 	var properties map[string]any
-	if err := json.Unmarshal([]byte(page.PropertiesJSON), &properties); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(page.PropertiesJSON))
+	decoder.UseNumber()
+	if decoder.Decode(&properties) != nil || decoder.Decode(new(any)) != io.EOF {
 		return false
 	}
 	specs := paths.properties[pageCollectionID(page)]

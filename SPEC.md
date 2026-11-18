@@ -186,6 +186,9 @@ Each file starts with YAML front matter. String values are double-quoted with
 backslashes, quotes, control characters, and Unicode line separators escaped.
 Ordinary newline characters in metadata are folded to spaces.
 
+Numeric property values in page bodies retain their archived precision and
+notation, including numbers, numeric formulas, numeric rollups, and unique IDs.
+
 Example fields:
 
 ```yaml
