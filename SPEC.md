@@ -249,3 +249,6 @@ appended alphabetically. Properties whose keys match `page_id`, `page_title`, or
 are ordered by property key and disambiguated with that key. Desktop title
 inference prefers `title`, `Name`, then `name`; other properties are considered
 in key order so repeated exports choose the same fallback title and path.
+
+Numeric property literals retain their archived precision and notation in CSV
+and TSV, including number, numeric formula, numeric rollup, and unique-ID fields.

@@ -3,6 +3,7 @@ package tableexport
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -14,7 +15,11 @@ func decodeMap(raw string) map[string]any {
 	if strings.TrimSpace(raw) == "" {
 		return out
 	}
-	_ = json.Unmarshal([]byte(raw), &out)
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&out) != nil || decoder.Decode(new(any)) != io.EOF {
+		return map[string]any{}
+	}
 	return out
 }
 
