@@ -92,6 +92,9 @@ notcrawl export-db --database DATABASE_ID --format csv --output roadmap.csv
 notcrawl export-db --all --dir exports/csv
 ```
 
+CSV and TSV exports preserve numeric property literals from the archive,
+including large integers and precise decimals.
+
 The main commands are:
 
 | Command | Purpose |

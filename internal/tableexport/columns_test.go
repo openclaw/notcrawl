@@ -4,12 +4,64 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/openclaw/notcrawl/internal/store"
 )
+
+func TestExportPreservesNumericPropertyPrecision(t *testing.T) {
+	for _, value := range []string{"9007199254740993", "-9007199254740993", "0.1234567890123456789", "1.234567890123456789e+20"} {
+		t.Run(value, func(t *testing.T) {
+			ctx := t.Context()
+			st, err := store.Open(filepath.Join(t.TempDir(), "archive.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = st.Close() })
+			if err := st.UpsertCollection(ctx, store.Collection{ID: "db", SchemaJSON: `{}`, Source: "api"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.UpsertPage(ctx, store.Page{
+				ID: "page", Title: "Example", CollectionID: "db", Alive: true, Source: "api",
+				PropertiesJSON: fmt.Sprintf(`{"number":{"type":"number","number":%s},"formula":{"type":"formula","formula":{"type":"number","number":%s}},"rollup":{"type":"rollup","rollup":{"type":"number","number":%s}},"unique":{"type":"unique_id","unique_id":{"prefix":"ITEM-","number":9007199254740993}}}`, value, value, value),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			for _, format := range []Format{FormatCSV, FormatTSV} {
+				var out bytes.Buffer
+				if _, err := (Exporter{Store: st}).Export(ctx, "db", format, &out); err != nil {
+					t.Fatal(err)
+				}
+				reader := csv.NewReader(&out)
+				if format == FormatTSV {
+					reader.Comma = '\t'
+				}
+				rows, err := reader.ReadAll()
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := [][]string{
+					{"page_id", "page_title", "url", "formula", "number", "rollup", "unique"},
+					{"page", "Example", "", value, value, value, "ITEM-9007199254740993"},
+				}
+				if !reflect.DeepEqual(rows, want) {
+					t.Fatalf("%s export = %#v; want %#v", format, rows, want)
+				}
+			}
+		})
+	}
+}
+
+func TestDecodeMapRejectsTrailingJSON(t *testing.T) {
+	for _, raw := range []string{`{"value":1} {"other":2}`, `{"value":1} trailing`} {
+		if got := decodeMap(raw); len(got) != 0 {
+			t.Fatalf("decodeMap(%q) = %#v; want no properties", raw, got)
+		}
+	}
+}
 
 func TestExportPreservesPropertiesNamedLikeMetadata(t *testing.T) {
 	for _, schema := range []string{
