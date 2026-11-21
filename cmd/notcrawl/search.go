@@ -18,14 +18,14 @@ func runSearch(ctx context.Context, stdout io.Writer, cfg config.Config, args []
 	if parsed.Limit <= 0 {
 		return fmt.Errorf("search --limit must be positive")
 	}
-	st, err := store.Open(cfg.DBPath)
+	st, err := store.OpenReadOnly(cfg.DBPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("open archive for search (run sync first to create or upgrade an archive): %w", err)
 	}
 	defer st.Close()
 	results, err := st.Search(ctx, strings.Join(parsed.Query, " "), parsed.Limit)
 	if err != nil {
-		return err
+		return fmt.Errorf("search archive (run sync first if the archive needs an upgrade): %w", err)
 	}
 	for _, r := range results {
 		fmt.Fprintf(stdout, "%s\t%s\t%s\t%s\n", searchField(r.Kind), searchField(r.ID), searchField(r.Title), searchField(r.Text))

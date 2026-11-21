@@ -1066,3 +1066,60 @@ func TestSQLCommandDoesNotMigrateLegacyArchive(t *testing.T) {
 		t.Fatal("SQL modified legacy archive")
 	}
 }
+
+func TestSearchCommandDoesNotCreateArchive(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "missing.db")
+	err := run(context.Background(), []string{"--config", filepath.Join(dir, "missing.toml"), "--db", dbPath, "search", "missing"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "run sync first") {
+		t.Fatalf("expected archive preparation hint, got %v", err)
+	}
+	if _, err := os.Stat(dbPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("search created missing archive: %v", err)
+	}
+}
+
+func TestSearchCommandDoesNotMigrateLegacyArchive(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertPage(ctx, store.Page{ID: "legacy", Title: "Legacy page", Alive: true, Source: "test", SyncedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE meta SET value = 3 WHERE key = 'schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout bytes.Buffer
+	args := []string{"--config", filepath.Join(dir, "missing.toml"), "--db", dbPath, "search", "Legacy"}
+	if err := run(ctx, args, &stdout, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "Legacy page") {
+		t.Fatalf("missing legacy result: %s", stdout.String())
+	}
+	after, err := os.ReadFile(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("search modified legacy archive")
+	}
+}
