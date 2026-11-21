@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Refresh CrawlKit, terminal rendering, Go support libraries, Release Drafter, and both the TruffleHog action and scanner while preserving the Go 1.27.1 minimum and SQLite-compatible libc pin. Thanks @dependabot! #244 #245
+
 - Preserve archived numeric property literals in Markdown, CSV, and TSV exports instead of rounding large integers and precise decimals through floating-point conversion.
 
 ## 0.6.13 - 2026-11-15

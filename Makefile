@@ -4,7 +4,7 @@ BINARY ?= bin/notcrawl
 CLI = $(if $(filter /%,$(BINARY)),$(BINARY),./$(BINARY))
 TAG ?=
 ASSET_DIR ?= dist/release-assets
-DEADCODE_VERSION = v0.52.0
+DEADCODE_VERSION = v0.53.0
 
 .PHONY: help build test test-release run fmt fmt-check deps lint smoke check release-notes release-check snapshot snapshot-release release-snapshot release release-artifacts release-macos verify-release verify-release-macos
 
@@ -34,7 +34,7 @@ deps: ## Verify module metadata and known vulnerabilities.
 	GOWORK=off go mod verify
 	GOWORK=off go mod tidy
 	git diff --exit-code -- go.mod go.sum
-	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+	GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
 
 lint: ## Run vet and production/test dead-code analysis.
 	GOWORK=off go vet ./...
